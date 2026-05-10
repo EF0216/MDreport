@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MD外部環境レーダー</title>
+    <?!= include('style'); ?>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">External Environment Radar</p>
+          <h1>MD外部環境レーダー</h1>
+          <p class="lead">天気・市場ニュース・商品アラートを毎日蓄積し、後日の売上分析に使うための表示専用ダッシュボードです。</p>
+        </div>
+        <div class="header-actions">
+          <button id="reloadButton" class="secondary-button" type="button">再読み込み</button>
+          <button id="manualUpdateButton" class="primary-button" type="button">手動更新</button>
+        </div>
+      </header>
+
+      <div id="status" class="status">読み込み中...</div>
+      <div id="error" class="error" hidden></div>
+
+      <nav class="tabs" aria-label="表示切替">
+        <button class="tab active" data-section="overview" type="button">重要</button>
+        <button class="tab" data-section="weather" type="button">気温</button>
+        <button class="tab" data-section="sales" type="button">売上</button>
+        <button class="tab" data-section="category" type="button">カテゴリ</button>
+        <button class="tab" data-section="products" type="button">商品</button>
+        <button class="tab" data-section="news" type="button">ニュース</button>
+        <button class="tab" data-section="review" type="button">保留</button>
+        <button class="tab" data-section="tags" type="button">タグ</button>
+      </nav>
+
+      <main>
+        <section id="overview" class="dashboard-section active">
+          <div class="section-heading">
+            <h2>今日の重要アラート</h2>
+            <span id="alertCount" class="badge">0件</span>
+          </div>
+          <div class="toolbar-row section-period-row">
+            <div class="segmented-control" id="importantPeriodMode" aria-label="重要アラートの表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <div id="importantWeekTabs" class="week-tabs" aria-label="重要アラート週別タブ"></div>
+          </div>
+          <div id="todayAlerts" class="card-grid"></div>
+
+          <div id="salesAlertSection" hidden>
+            <div class="section-heading" style="margin-top:24px">
+              <h2>売上動向アラート <span style="font-size:13px;font-weight:400;color:var(--muted)">前週同曜日比・前年比・予算比・荒利</span></h2>
+              <span id="salesAlertCount" class="badge">0件</span>
+            </div>
+            <div id="salesAlerts" class="card-grid"></div>
+          </div>
+        </section>
+
+        <section id="weather" class="dashboard-section">
+          <div class="section-heading">
+            <h2>ゾーン別 気温アラート</h2>
+          </div>
+          <div class="toolbar-row section-period-row">
+            <div class="segmented-control" id="weatherPeriodMode" aria-label="気温アラートの表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <div id="weatherWeekTabs" class="week-tabs" aria-label="気温アラート週別タブ"></div>
+          </div>
+          <div id="weatherCards" class="card-grid compact"></div>
+          <div class="weather-trend">
+            <div class="trend-toolbar">
+              <div>
+                <h3>気温推移</h3>
+                <p>過去実績と今後の予報をゾーン別に確認できます。</p>
+              </div>
+              <label>
+                <span>ゾーン</span>
+                <select id="weatherZoneSelect"></select>
+              </label>
+            </div>
+            <div id="weatherTrendChart" class="chart-surface"></div>
+            <div class="chart-legend">
+              <span><i class="legend-line max"></i>最高気温</span>
+              <span><i class="legend-line min"></i>最低気温</span>
+              <span><i class="legend-line last-year-max"></i>昨年最高</span>
+              <span><i class="legend-line last-year-min"></i>昨年最低</span>
+              <span><i class="legend-dot forecast"></i>予報</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>日付</th>
+                  <th>ゾーン</th>
+                  <th>最高</th>
+                  <th>最低</th>
+                  <th>降水量</th>
+                  <th>前週差</th>
+                  <th>前年差</th>
+                  <th>昨年同週同曜日</th>
+                  <th>アラート</th>
+                </tr>
+              </thead>
+              <tbody id="weatherTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="sales" class="dashboard-section">
+          <div class="section-heading">
+            <h2>ゾーン別 売上実績</h2>
+            <label class="toolbar-label">
+              <span>日付</span>
+              <select id="salesDateSelect"></select>
+            </label>
+          </div>
+          <div class="toolbar-row section-period-row">
+            <div class="segmented-control" id="salesPeriodMode" aria-label="売上実績の表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <div id="salesWeekTabs" class="week-tabs" aria-label="売上実績週別タブ"></div>
+          </div>
+          <div id="salesContent"></div>
+        </section>
+
+        <section id="category" class="dashboard-section">
+          <div class="section-heading">
+            <h2>カテゴリ別 実績</h2>
+          </div>
+          <div class="toolbar-row">
+            <div class="segmented-control" id="categoryPeriodMode" aria-label="カテゴリ実績の表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <label class="toolbar-label">
+              <span>日付</span>
+              <select id="categoryDateSelect"></select>
+            </label>
+            <label class="toolbar-label">
+              <span>ゾーン</span>
+              <select id="categoryZoneSelect"></select>
+            </label>
+            <label class="toolbar-label">
+              <span>部門</span>
+              <select id="categoryBumonSelect">
+                <option value="">全部門</option>
+                <option value="0075">メンズ</option>
+                <option value="0187">レディース</option>
+              </select>
+            </label>
+          </div>
+          <div id="categoryWeekTabs" class="week-tabs section-week-tabs" aria-label="カテゴリ実績週別タブ"></div>
+          <div class="table-wrap sticky-table-wrap category-table-wrap">
+            <table id="categoryTable">
+              <thead>
+                <tr>
+                  <th>部門</th>
+                  <th>カテゴリ</th>
+                  <th>サブカテゴリ</th>
+                  <th class="num">実績数量</th>
+                  <th class="num">実績金額</th>
+                  <th class="num" id="categoryCompareAmountHead">売上前週同曜日実績</th>
+                  <th class="num" id="categoryCompareRateHead">前週比</th>
+                  <th class="num">前年同週同曜日金額</th>
+                  <th class="num">売上前年差</th>
+                  <th class="num">昨年対比</th>
+                  <th class="num">荒利</th>
+                  <th class="num">荒利前年差</th>
+                  <th class="num">粗利率</th>
+                </tr>
+              </thead>
+              <tbody id="categoryTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="products" class="dashboard-section">
+          <div class="section-heading">
+            <h2>商品分析</h2>
+            <span id="productAnalysisCount" class="badge">0件</span>
+          </div>
+          <div class="toolbar-row">
+            <label class="toolbar-label">
+              <span>日付</span>
+              <select id="productDateSelect"></select>
+            </label>
+            <label class="toolbar-label">
+              <span>部門</span>
+              <select id="productBumonSelect">
+                <option value="">全部門</option>
+                <option value="0075">メンズ</option>
+                <option value="0187">レディース</option>
+              </select>
+            </label>
+            <label class="toolbar-label">
+              <span>カテゴリ</span>
+              <select id="productCategorySelect"></select>
+            </label>
+            <label class="toolbar-label">
+              <span>並び順</span>
+              <select id="productSortSelect">
+                <option value="impact">金額影響順</option>
+                <option value="up">伸び順</option>
+                <option value="down">落ち込み順</option>
+                <option value="amount">実績金額順</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolbar-row product-period-row">
+            <div class="segmented-control" id="productPeriodMode" aria-label="商品分析の表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <div id="productWeekTabs" class="week-tabs" aria-label="週別タブ"></div>
+          </div>
+          <div id="productSummaryCards" class="product-summary-grid"></div>
+          <div id="productAnalysisCards" class="product-analysis-grid"></div>
+          <div class="table-wrap sticky-table-wrap product-table-wrap">
+            <table id="productAnalysisTable">
+              <thead>
+                <tr>
+                  <th>部門</th>
+                  <th>カテゴリ</th>
+                  <th>サブカテゴリ</th>
+                  <th class="num">実績金額</th>
+                  <th class="num">先週同曜日</th>
+                  <th class="num">先週同曜日差</th>
+                  <th class="num">先週同曜日比</th>
+                  <th class="num">前年同週同曜日</th>
+                  <th class="num">前年比</th>
+                  <th class="num">荒利</th>
+                  <th class="num">粗利率</th>
+                  <th class="num">前年荒利</th>
+                  <th class="num">荒利前年比</th>
+                  <th>気温寄与メモ</th>
+                  <th>前週伸びゾーン</th>
+                  <th>前週落ちゾーン</th>
+                </tr>
+              </thead>
+              <tbody id="productAnalysisTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="news" class="dashboard-section">
+          <div class="section-heading">
+            <h2>市場ニュース</h2>
+          </div>
+          <div class="toolbar-row section-period-row">
+            <div class="segmented-control" id="newsPeriodMode" aria-label="市場ニュースの表示単位">
+              <button type="button" class="segment is-active" data-mode="daily">日別</button>
+              <button type="button" class="segment" data-mode="weekly">週別</button>
+            </div>
+            <div id="newsWeekTabs" class="week-tabs" aria-label="市場ニュース週別タブ"></div>
+          </div>
+          <div id="newsList" class="list"></div>
+        </section>
+
+        <section id="review" class="dashboard-section">
+          <div class="section-heading">
+            <h2>保留ニュース</h2>
+          </div>
+          <div id="reviewList" class="list"></div>
+        </section>
+
+        <section id="tags" class="dashboard-section">
+          <div class="section-heading">
+            <h2>分析用タグ</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>日付</th>
+                  <th>週</th>
+                  <th>ゾーン</th>
+                  <th>カテゴリ</th>
+                  <th>気温タグ</th>
+                  <th>天気タグ</th>
+                  <th>市場タグ</th>
+                  <th>商品タグ</th>
+                  <th>アクション</th>
+                </tr>
+              </thead>
+              <tbody id="tagTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>最終更新日時</span>
+        <strong id="updatedAt">-</strong>
+      </footer>
+    </div>
+
+    <?!= include('script'); ?>
+  </body>
+</html>

@@ -1,29 +1,28 @@
 # MD外部環境レーダー
 
-Google Apps Script と Google スプレッドシートで動く、MD向けの外部環境・売上分析ダッシュボードです。
+MD向けに、天気・市場ニュース・商品アラート・売上実績をまとめて確認するための Google Apps Script アプリです。
 
-天気、ニュース、商品アラート、売上実績をスプレッドシートに蓄積し、Apps Script の Web アプリとして表示します。
+このリポジトリは公開用テンプレートです。実運用中のスプレッドシートID、Apps ScriptプロジェクトID、WebアプリURL、実データは含めていません。
 
-## できること
+## GitHub Pagesについて
 
-- Open-Meteo からゾーン別の天気を取得
-- Google News RSS から商品・市場ニュースを取得
-- 気温、降水、ニュースから商品アラートと分析タグを作成
-- 売上実績、前週同曜日比、前年比、予算比、荒利、粗利率をダッシュボード表示
-- 日別と週別の表示切替
-- スプレッドシートをDBとして使うため、外部サーバー不要
+GitHub Pagesで表示されるトップページは、公開説明とサンプル表示です。
 
-## ファイル構成
+実データを取得する本番ダッシュボードは Google Apps Script の Webアプリとして動きます。Apps Script 専用の `google.script.run` や HtmlService の include は、GitHub Pages上では動きません。
+
+## 構成
 
 ```text
-Code.gs
-index.html
-style.html
-script.html
-appsscript.json
-.claspignore
-.clasp.json.example
-docs/
+index.html        GitHub Pages用の説明ページ
+gas/              Apps Script 本体
+  Code.gs
+  index.html
+  style.html
+  script.html
+  appsscript.json
+  .claspignore
+  .clasp.json.example
+docs/             補足ドキュメント
 ```
 
 ## セットアップ
@@ -36,14 +35,19 @@ docs/
 SPREADSHEET_ID = 作成したスプレッドシートID
 ```
 
-4. このリポジトリのファイルを Apps Script に反映します。
+4. `gas/` 配下のファイルを Apps Script に反映します。
 5. Apps Script エディタで `setupSpreadsheet()` を実行します。
 6. `updateDailyData()` を実行して初回データを取得します。
 7. `createDailyTrigger()` を実行すると、毎日自動更新のトリガーを作成できます。
 
 ## clasp を使う場合
 
-`.clasp.json.example` を `.clasp.json` にコピーし、自分の Apps Script プロジェクトIDを設定してください。
+```bash
+cd gas
+npm install
+```
+
+`gas/.clasp.json.example` を `gas/.clasp.json` にコピーし、自分の Apps Script プロジェクトIDを設定してください。
 
 ```json
 {
@@ -55,13 +59,12 @@ SPREADSHEET_ID = 作成したスプレッドシートID
 その後、以下で反映できます。
 
 ```bash
-npm install
 npm run push
 ```
 
 ## 注意
 
-この公開版には、実運用中のスプレッドシートID、Apps ScriptプロジェクトID、WebアプリURL、実データは含めていません。
-
-Webアプリの公開範囲は、利用環境に合わせて Apps Script のデプロイ設定で調整してください。
+- GitHub Pagesは静的ページです。スプレッドシートの実データは読み込みません。
+- 実データ版を共有する場合は、Apps Script のWebアプリをデプロイしてURLを共有してください。
+- 公開リポジトリへ `.clasp.json`、スプレッドシートID、WebアプリURL、実績データを含めないでください。
 
