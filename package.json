@@ -1,0 +1,16 @@
+{
+  "name": "md-environment-radar-gas",
+  "version": "0.1.0",
+  "private": false,
+  "scripts": {
+    "login": "npx @google/clasp login",
+    "pull": "npx @google/clasp pull",
+    "push": "npx @google/clasp push",
+    "open": "npx @google/clasp open-script",
+    "status": "npx @google/clasp status"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.0.6-alpha"
+  }
+}
+

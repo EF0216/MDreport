@@ -1,0 +1,12 @@
+.clasp.json
+node_modules/
+*.xlsx
+*.xls
+*.csv
+*.gsheet
+*.url
+*.backup.*
+v*-check/
+.DS_Store
+Thumbs.db
+

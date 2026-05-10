@@ -1,0 +1,2473 @@
+<script>
+  // 北から南のゾーン順（この順で表示・ドロップダウン）
+  const ZONE_ORDER_NS = [
+    '北海道', '青森', '東北', '首都圏', '西関東', '東関東',
+    '東関西', '西関西', '中部', '北陸', '中国', '四国',
+    '北九州', '筑豊', '福岡', '東九州', '西九州', '天草', '南九州',
+    '西友'
+  ];
+
+  function sortZonesNS(zoneNames) {
+    return [...zoneNames].sort((a, b) => {
+      const ai = ZONE_ORDER_NS.indexOf(a);
+      const bi = ZONE_ORDER_NS.indexOf(b);
+      if (ai === -1 && bi === -1) return String(a).localeCompare(String(b), 'ja');
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }
+
+  function shiftDateString(date, days) {
+    const d = new Date(`${date}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function pickComparisonDate(dates, date) {
+    const lastWeekDate = shiftDateString(date, -7);
+    if (dates.includes(lastWeekDate)) {
+      return {
+        date: lastWeekDate,
+        label: '前週同曜日',
+        rateLabel: '前週同曜日比',
+        diffLabel: '前週同曜日差'
+      };
+    }
+    const fallback = dates[dates.indexOf(date) + 1] || '';
+    return {
+      date: fallback,
+      label: fallback ? '前回' : '比較日なし',
+      rateLabel: fallback ? '前回比' : '比較なし',
+      diffLabel: fallback ? '前回差' : '比較なし'
+    };
+  }
+
+  const state = {
+    loading: false,
+    data: null,
+    periods: {
+      important: { mode: 'daily', weekKey: '' },
+      weather: { mode: 'daily', weekKey: '' },
+      sales: { mode: 'daily', weekKey: '' },
+      category: { mode: 'daily', weekKey: '' },
+      news: { mode: 'daily', weekKey: '' }
+    }
+  };
+
+  function rowWeekNo(row) {
+    const week = row.week_no || row.week || '';
+    return week === '' || week === null || typeof week === 'undefined' ? '' : String(week);
+  }
+
+  function rowInWeek(row, week) {
+    if (!week) return false;
+    const date = String(row.date || '');
+    if (!date || date < week.startDate || date > week.endDate) return false;
+    const weekNo = rowWeekNo(row);
+    return !weekNo || weekNo === String(week.weekNo);
+  }
+
+  function rowInDateRange(row, startDate, endDate) {
+    const date = String(row.date || '');
+    return date && date >= startDate && date <= endDate;
+  }
+
+  function periodRangeText(startDate, endDate) {
+    return startDate === endDate ? startDate : `${startDate}〜${endDate}`;
+  }
+
+  function currentPeriodWeek(periodKey, weeks) {
+    const period = state.periods[periodKey] || { mode: 'daily', weekKey: '' };
+    return weeks.find((week) => week.key === period.weekKey) || weeks[0] || null;
+  }
+
+  function bindPeriodControls(periodKey, weeks, onChange) {
+    const period = state.periods[periodKey] || (state.periods[periodKey] = { mode: 'daily', weekKey: '' });
+    const mode = document.getElementById(`${periodKey}PeriodMode`);
+    const tabs = document.getElementById(`${periodKey}WeekTabs`);
+    if (!weeks.length) period.mode = 'daily';
+    if (!period.weekKey && weeks[0]) period.weekKey = weeks[0].key;
+    if (mode) {
+      mode.querySelectorAll('.segment').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.mode === period.mode);
+        button.onclick = () => {
+          period.mode = button.dataset.mode === 'weekly' && weeks.length ? 'weekly' : 'daily';
+          if (!period.weekKey && weeks[0]) period.weekKey = weeks[0].key;
+          bindPeriodControls(periodKey, weeks, onChange);
+          onChange();
+        };
+      });
+    }
+    if (tabs) {
+      tabs.classList.toggle('is-visible', period.mode === 'weekly' && weeks.length > 0);
+      tabs.innerHTML = weeks.map((week) => `
+        <button type="button" class="week-tab ${week.key === period.weekKey ? 'is-active' : ''}" data-week="${escapeAttribute(week.key)}">
+          ${escapeHtml(week.label)}
+        </button>
+      `).join('');
+      tabs.querySelectorAll('.week-tab').forEach((button) => {
+        button.onclick = () => {
+          period.weekKey = button.dataset.week || period.weekKey;
+          bindPeriodControls(periodKey, weeks, onChange);
+          onChange();
+        };
+      });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    bindEvents();
+    loadDashboard();
+  });
+
+  function bindEvents() {
+    document.getElementById('reloadButton').addEventListener('click', loadDashboard);
+    document.getElementById('manualUpdateButton').addEventListener('click', runManualUpdate);
+    document.querySelectorAll('.tab').forEach((button) => {
+      button.addEventListener('click', () => switchSection(button.dataset.section));
+    });
+  }
+
+  function switchSection(sectionId) {
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.section === sectionId);
+    });
+    document.querySelectorAll('.dashboard-section').forEach((section) => {
+      section.classList.toggle('active', section.id === sectionId);
+    });
+  }
+
+  function loadDashboard() {
+    setLoading(true, '読み込み中...');
+    google.script.run
+      .withSuccessHandler((data) => {
+        state.data = data;
+        renderDashboard(data);
+        setLoading(false);
+      })
+      .withFailureHandler((error) => {
+        showError(error);
+        setLoading(false);
+      })
+      .getDashboardData();
+  }
+
+  function runManualUpdate() {
+    const button = document.getElementById('manualUpdateButton');
+    button.disabled = true;
+    button.textContent = '更新中...';
+    setLoading(true, '手動更新中...');
+
+    google.script.run
+      .withSuccessHandler((data) => {
+        state.data = data;
+        renderDashboard(data);
+        button.disabled = false;
+        button.textContent = '手動更新';
+        setLoading(false);
+      })
+      .withFailureHandler((error) => {
+        showError(error);
+        button.disabled = false;
+        button.textContent = '手動更新';
+        setLoading(false);
+      })
+      .updateDailyData();
+  }
+
+  function renderDashboard(data) {
+    hideError();
+    const weeks = data.dashboardWeeks || data.legwearWeeks || [];
+    document.getElementById('updatedAt').textContent = data.updatedAt || '-';
+    renderTodayAlerts(buildImportantAlerts(data), buildImportantAlerts(data, true), weeks);
+    renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherDaily || data.weatherLatest || [], weeks);
+    renderWeather(data.weatherLatest || [], data.weatherTrend || [], data.zoneOrder || [], data.weatherDaily || [], weeks);
+    renderSales(data.legwearBumon || [], data.legwearDates || [], weeks);
+    renderCategory(data.legwearCategory || [], data.legwearDates || [], weeks);
+    renderProductAnalysis(
+      data.legwearCategory || [],
+      data.legwearCurrentWeekDates || data.legwearDates || [],
+      data.weatherTrend || [],
+      data.legwearWeeks || [],
+      data.legwearDates || []
+    );
+    renderNews(data.newsLatest || [], data.newsDaily || [], weeks);
+    renderReviewNews(data.newsReview || []);
+    renderTags(data.analysisTags || []);
+  }
+
+  function buildImportantAlerts(data, useRange = false) {
+    const baseAlerts = useRange ? (data.productAlertsDaily || data.productAlerts || []) : (data.todayAlerts || []);
+    const importantNews = (useRange ? (data.newsDaily || []) : (data.newsLatest || []))
+      .filter((row) => Number(row.importance || 0) >= 4)
+      .map((row) => ({
+        date: row.date,
+        category: row.category || 'ニュース',
+        keyword: row.keyword || row.title || 'ニュース',
+        alert_type: 'ニュース',
+        evidence: row.title,
+        importance: row.importance,
+        sales_check_point: row.md_insight || row.summary || 'ニュース内容を売上分析時の外部要因として確認',
+        action: row.source ? `${row.source} / ニュースタブで詳細確認` : 'ニュースタブで詳細確認',
+        created_at: row.created_at
+      }));
+
+    const seen = {};
+    return [...baseAlerts, ...importantNews].filter((item) => {
+      const key = `${item.date || ''}|${item.alert_type || ''}|${item.evidence || item.keyword || ''}`;
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function renderTodayAlerts(items, rangeItems = items, weeks = []) {
+    const render = () => {
+    const period = state.periods.important;
+    const week = currentPeriodWeek('important', weeks);
+    const sourceItems = period.mode === 'weekly' && week
+      ? (rangeItems || []).filter((item) => rowInDateRange(item, week.startDate, week.endDate))
+      : items;
+    const sorted = sortByImportance(sourceItems);
+
+    // 同一 keyword × alert_type は1枚にまとめる（ゾーン名は evidence に列挙）
+    const groupMap = {};
+    sorted.forEach(item => {
+      const key = `${item.keyword}||${item.alert_type || ''}`;
+      if (!groupMap[key]) {
+        groupMap[key] = { ...item, _evidences: [] };
+      }
+      groupMap[key]._evidences.push(item.evidence);
+    });
+    const consolidated = Object.values(groupMap).map(g => {
+      const base = { ...g };
+      if (g._evidences.length === 1) {
+        base.evidence = g._evidences[0];
+      } else {
+        // 最大5件表示、残りは「他N件」
+        const shown = g._evidences.slice(0, 5);
+        const rest  = g._evidences.length - shown.length;
+        base.evidence = shown.join(' / ') + (rest > 0 ? ` 他${rest}件` : '');
+      }
+      return base;
+    }).sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
+
+    const display = consolidated.slice(0, 12);
+    document.getElementById('alertCount').textContent = `${display.length}件`;
+    renderCards('todayAlerts', display, (item) => `
+      <article class="card important">
+        <div class="meta">
+          <span>${escapeHtml(period.mode === 'weekly' && week ? `W${week.weekNo} ${periodRangeText(week.startDate, week.endDate)}` : item.date)}</span>
+          <span>${escapeHtml(item.category)}</span>
+          <span class="importance">重要度 ${escapeHtml(item.importance)}</span>
+        </div>
+        <div class="card-title">${escapeHtml(item.evidence)}</div>
+        <div>${escapeHtml(item.sales_check_point)}</div>
+        <div class="action">${escapeHtml(item.action)}</div>
+      </article>
+    `);
+    };
+    bindPeriodControls('important', weeks, () => renderDashboard(state.data || {}));
+    render();
+  }
+
+  // ── 売上動向アラート（前週同曜日比） ───────────────────────────────────
+  function computeSalesAlerts(bumonRows, categoryRows, weatherItems) {
+    const dates = [...new Set(bumonRows.map(r => r.date).filter(Boolean))].sort().reverse();
+    if (dates.length < 2) return [];
+    const todayD = dates[0];
+    const comparison = pickComparisonDate(dates, todayD);
+    const prevD = comparison.date;
+    if (!prevD) return [];
+
+    const weatherByZone = {};
+    (weatherItems || []).forEach(w => { if (w.zone) weatherByZone[w.zone] = w; });
+
+    const isAggr = r => String(r.zone_code || '').padStart(4,'0') === '0000' || r.zone_name === '全社計';
+    const alerts = [];
+
+    // ── ゾーン別売上比較（bumonデータ、個別ゾーン行）
+    const sumByZoneDetail = (rows) => {
+      const m = {};
+      rows.filter(r => !isAggr(r)).forEach(r => {
+        const z = r.zone_name; if (!z) return;
+        const bcd = String(r['部門CD'] || '').padStart(4, '0');
+        const actual = Number(r['売上実績'] || 0);
+        const budget = Number(r['売上予算'] || 0);
+        const lastYear = Number(r['前年同週同曜日実績'] || 0);
+        const profit = grossProfitFromRow(r, '売上実績');
+        const lastYearProfit = lastYearGrossProfitFromRow(r);
+        if (!m[z]) {
+          m[z] = {
+            total: 0, mens: 0, ladies: 0,
+            totalBudget: 0, mensBudget: 0, ladiesBudget: 0,
+            totalLy: 0, mensLy: 0, ladiesLy: 0,
+            totalProfit: 0, mensProfit: 0, ladiesProfit: 0,
+            totalLyProfit: 0, mensLyProfit: 0, ladiesLyProfit: 0
+          };
+        }
+        m[z].total  += actual;
+        m[z].totalBudget += budget;
+        m[z].totalLy += lastYear;
+        if (!Number.isNaN(profit)) m[z].totalProfit += profit;
+        if (!Number.isNaN(lastYearProfit)) m[z].totalLyProfit += lastYearProfit;
+        if (bcd === '0075') {
+          m[z].mens += actual;
+          m[z].mensBudget += budget;
+          m[z].mensLy += lastYear;
+          if (!Number.isNaN(profit)) m[z].mensProfit += profit;
+          if (!Number.isNaN(lastYearProfit)) m[z].mensLyProfit += lastYearProfit;
+        }
+        if (bcd === '0187') {
+          m[z].ladies += actual;
+          m[z].ladiesBudget += budget;
+          m[z].ladiesLy += lastYear;
+          if (!Number.isNaN(profit)) m[z].ladiesProfit += profit;
+          if (!Number.isNaN(lastYearProfit)) m[z].ladiesLyProfit += lastYearProfit;
+        }
+      });
+      const national = Object.values(m).reduce((acc, row) => {
+        Object.keys(acc).forEach(key => { acc[key] += Number(row[key] || 0); });
+        return acc;
+      }, {
+        total: 0, mens: 0, ladies: 0,
+        totalBudget: 0, mensBudget: 0, ladiesBudget: 0,
+        totalLy: 0, mensLy: 0, ladiesLy: 0,
+        totalProfit: 0, mensProfit: 0, ladiesProfit: 0,
+        totalLyProfit: 0, mensLyProfit: 0, ladiesLyProfit: 0
+      });
+      if (national.total > 0) m['全社計'] = national;
+      return m;
+    };
+    const zTodayD = sumByZoneDetail(bumonRows.filter(r => r.date === todayD));
+    const zPrevD  = sumByZoneDetail(bumonRows.filter(r => r.date === prevD));
+    const zToday  = Object.fromEntries(Object.entries(zTodayD).map(([z, v]) => [z, v.total]));
+    const zPrev   = Object.fromEntries(Object.entries(zPrevD).map(([z, v])  => [z, v.total]));
+
+    const sumCategoryByZoneAndBumon = (rows) => {
+      const m = {};
+      rows.filter(r => !isAggr(r)).forEach(r => {
+        const zone = r.zone_name;
+        const bumon = String(r['部門CD'] || '').padStart(4, '0');
+        if (!zone || !['0075', '0187'].includes(bumon)) return;
+        const bumonName = r['部門名'] || (bumon === '0075' ? 'メンズ' : 'レディース');
+        const category = r['カテゴリ名'] || '未設定';
+        const subcategory = r['サブカテ名'] || '未設定';
+        const key = `${zone}|||${bumon}|||${category}|||${subcategory}`;
+        if (!m[key]) {
+          m[key] = {
+            zone, bumon, bumonName, category, subcategory,
+            today: 0, prev: 0, ly: 0, hasLy: false,
+            profit: 0, profitLy: 0, hasProfit: false, hasProfitLy: false
+          };
+        }
+        m[key].today += Number(r['実績金額'] || 0);
+        const profit = grossProfitFromRow(r, '実績金額');
+        const profitLy = lastYearGrossProfitFromRow(r);
+        if (!Number.isNaN(profit)) {
+          m[key].profit += profit;
+          m[key].hasProfit = true;
+        }
+        if (!Number.isNaN(profitLy)) {
+          m[key].profitLy += profitLy;
+          m[key].hasProfitLy = true;
+        }
+        if (r['前年同週同曜日実績'] !== '' && r['前年同週同曜日実績'] !== null && typeof r['前年同週同曜日実績'] !== 'undefined') {
+          m[key].ly += Number(r['前年同週同曜日実績'] || 0);
+          m[key].hasLy = true;
+        }
+      });
+      return m;
+    };
+    const catTodayMap = sumCategoryByZoneAndBumon(categoryRows.filter(r => r.date === todayD));
+    const catPrevMap = sumCategoryByZoneAndBumon(categoryRows.filter(r => r.date === prevD));
+    Object.keys(catPrevMap).forEach(key => {
+      if (!catTodayMap[key]) {
+        catTodayMap[key] = {
+          ...catPrevMap[key],
+          today: 0, ly: 0, hasLy: false,
+          profit: 0, profitLy: 0, hasProfit: false, hasProfitLy: false
+        };
+      }
+      catTodayMap[key].prev = catPrevMap[key].today || 0;
+    });
+
+    const findMainCategory = (zone, bumon, direction) => {
+      const rows = Object.values(catTodayMap)
+        .filter(r => (zone === '全社計' || r.zone === zone) && r.bumon === bumon)
+        .map(r => {
+          const diff = Number(r.today || 0) - Number(r.prev || 0);
+          const pct = r.prev ? diff / r.prev * 100 : null;
+          const grossRate = r.hasProfit ? grossMarginRate(r.profit, r.today) : NaN;
+          const profitYoy = r.hasProfitLy && r.profitLy ? r.profit / r.profitLy * 100 : null;
+          const impactAmount = Math.abs(diff);
+          return { ...r, diff, pct, grossRate, profitYoy, impactAmount };
+        })
+        .filter(r => Math.abs(r.diff) > 0);
+      if (!rows.length) return null;
+
+      const directional = rows.filter(r => direction === 'up' ? r.diff > 0 : r.diff < 0);
+      const candidates = directional.length ? directional : rows;
+      candidates.sort((a, b) => b.impactAmount - a.impactAmount);
+      return candidates[0];
+    };
+
+    const findSubcatZoneMoves = (bumon, category, subcategory, direction, limit) => {
+      const grouped = {};
+      Object.values(catTodayMap)
+        .filter(r => r.bumon === bumon && r.category === category && r.subcategory === subcategory)
+        .forEach(r => {
+          const key = r.zone;
+          if (!grouped[key]) {
+            grouped[key] = {
+              zone: r.zone,
+              today: 0,
+              prev: 0,
+              ly: 0,
+              hasLy: false,
+              profit: 0,
+              profitLy: 0,
+              hasProfit: false,
+              hasProfitLy: false
+            };
+          }
+          grouped[key].today += Number(r.today || 0);
+          grouped[key].prev += Number(r.prev || 0);
+          if (r.hasProfit) {
+            grouped[key].profit += Number(r.profit || 0);
+            grouped[key].hasProfit = true;
+          }
+          if (r.hasProfitLy) {
+            grouped[key].profitLy += Number(r.profitLy || 0);
+            grouped[key].hasProfitLy = true;
+          }
+          if (r.hasLy) {
+            grouped[key].ly += Number(r.ly || 0);
+            grouped[key].hasLy = true;
+          }
+        });
+
+      return Object.values(grouped)
+        .map(r => {
+          const diff = Number(r.today || 0) - Number(r.prev || 0);
+          const pct = r.prev ? diff / r.prev * 100 : null;
+          const yoy = r.hasLy && r.ly ? r.today / r.ly * 100 : null;
+          const grossRate = r.hasProfit ? grossMarginRate(r.profit, r.today) : NaN;
+          const profitYoy = r.hasProfitLy && r.profitLy ? r.profit / r.profitLy * 100 : null;
+          return { ...r, diff, pct, yoy, grossRate, profitYoy, impactAmount: Math.abs(diff) };
+        })
+        .filter(r => direction === 'up' ? r.diff > 0 : r.diff < 0)
+        .sort((a, b) => b.impactAmount - a.impactAmount)
+        .slice(0, limit);
+    };
+
+    const buildSubcatChanges = () => {
+      const grouped = {};
+      Object.values(catTodayMap).forEach(r => {
+        const key = `${r.bumon}|||${r.bumonName}|||${r.category}|||${r.subcategory}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            bumon: r.bumon,
+            bumonName: r.bumonName,
+            category: r.category,
+            subcategory: r.subcategory,
+            todayAmt: 0,
+            prevAmt: 0,
+            profitAmt: 0,
+            profitLyAmt: 0,
+            hasProfit: false,
+            hasProfitLy: false
+          };
+        }
+        grouped[key].todayAmt += Number(r.today || 0);
+        grouped[key].prevAmt += Number(r.prev || 0);
+        if (r.hasProfit) {
+          grouped[key].profitAmt += Number(r.profit || 0);
+          grouped[key].hasProfit = true;
+        }
+        if (r.hasProfitLy) {
+          grouped[key].profitLyAmt += Number(r.profitLy || 0);
+          grouped[key].hasProfitLy = true;
+        }
+      });
+
+      return Object.values(grouped)
+        .filter(r => r.prevAmt >= 1000 && r.todayAmt >= 100)
+        .map(r => {
+          const diff = Number(r.todayAmt || 0) - Number(r.prevAmt || 0);
+          const pct = r.prevAmt ? diff / r.prevAmt * 100 : null;
+          const grossRate = r.hasProfit ? grossMarginRate(r.profitAmt, r.todayAmt) : NaN;
+          const profitYoy = r.hasProfitLy && r.profitLyAmt ? r.profitAmt / r.profitLyAmt * 100 : null;
+          return {
+            ...r,
+            diff,
+            pct,
+            grossRate,
+            profitYoy,
+            impactAmount: Math.abs(diff),
+            goodZones: findSubcatZoneMoves(r.bumon, r.category, r.subcategory, 'up', 3),
+            badZones: findSubcatZoneMoves(r.bumon, r.category, r.subcategory, 'down', 3)
+          };
+        })
+        .filter(r => Math.abs(r.diff) > 0);
+    };
+
+    const pctVs = (today, base) => base ? (today - base) / base * 100 : null;
+    const yoyRate = (today, lastYear) => lastYear ? today / lastYear * 100 : null;
+    const budgetRate = (today, budget) => budget ? today / budget * 100 : null;
+    const judgeTwoAxis = (dayPct, yoy) => {
+      if (yoy === null || Number.isNaN(yoy)) {
+        return { label: dayPct >= 0 ? `${comparison.rateLabel}回復` : `${comparison.rateLabel}下落`, className: dayPct >= 0 ? 'num-good' : 'num-bad' };
+      }
+      if (dayPct >= 0 && yoy >= 100) return { label: '好調継続', className: 'num-good' };
+      if (dayPct >= 0 && yoy < 100) return { label: `${comparison.rateLabel}回復・前年差不足`, className: 'num-warn' };
+      if (dayPct < 0 && yoy >= 100) return { label: `${comparison.rateLabel}反動・前年差は維持`, className: 'num-warn' };
+      return { label: '注意', className: 'num-bad' };
+    };
+
+    const allZoneChanges = Object.keys(zToday)
+      .filter(z => (zPrev[z] || 0) >= 10000 && (zToday[z] || 0) > 0)
+      .map(z => {
+        const pct = (zToday[z] - zPrev[z]) / zPrev[z] * 100;
+        const yoy = yoyRate(zTodayD[z]?.total || 0, zTodayD[z]?.totalLy || 0);
+        const w = weatherByZone[z] || {};
+        const hasLastWeekTemp = w.temp_vs_last_week !== '' && w.temp_vs_last_week !== null && typeof w.temp_vs_last_week !== 'undefined';
+        const tempDiff = Number(hasLastWeekTemp ? w.temp_vs_last_week : (w.temp_vs_yesterday || 0));
+        const tempCompareLabel = hasLastWeekTemp ? '前週差' : '前日差';
+        const direction = pct >= 0 ? 'up' : 'down';
+        const judgment = judgeTwoAxis(pct, yoy);
+        return { zone: z, today: zToday[z], prev: zPrev[z], pct, tempDiff, tempCompareLabel,
+          todayMens: zTodayD[z]?.mens || 0, prevMens: zPrevD[z]?.mens || 0,
+          budgetMens: zTodayD[z]?.mensBudget || 0,
+          lyMens: zTodayD[z]?.mensLy || 0,
+          profitMens: zTodayD[z]?.mensProfit || 0,
+          lyProfitMens: zTodayD[z]?.mensLyProfit || 0,
+          todayLadies: zTodayD[z]?.ladies || 0, prevLadies: zPrevD[z]?.ladies || 0,
+          budgetLadies: zTodayD[z]?.ladiesBudget || 0,
+          lyLadies: zTodayD[z]?.ladiesLy || 0,
+          profitLadies: zTodayD[z]?.ladiesProfit || 0,
+          lyProfitLadies: zTodayD[z]?.ladiesLyProfit || 0,
+          budgetTotal: zTodayD[z]?.totalBudget || 0,
+          lyTotal: zTodayD[z]?.totalLy || 0,
+          profitTotal: zTodayD[z]?.totalProfit || 0,
+          lyProfitTotal: zTodayD[z]?.totalLyProfit || 0,
+          yoy, budgetRatio: budgetRate(zTodayD[z]?.total || 0, zTodayD[z]?.totalBudget || 0), judgment,
+          grossRateTotal: grossMarginRate(zTodayD[z]?.totalProfit || 0, zTodayD[z]?.total || 0),
+          profitYoy: yoyRate(zTodayD[z]?.totalProfit || 0, zTodayD[z]?.totalLyProfit || 0),
+          grossRateMens: grossMarginRate(zTodayD[z]?.mensProfit || 0, zTodayD[z]?.mens || 0),
+          profitYoyMens: yoyRate(zTodayD[z]?.mensProfit || 0, zTodayD[z]?.mensLyProfit || 0),
+          grossRateLadies: grossMarginRate(zTodayD[z]?.ladiesProfit || 0, zTodayD[z]?.ladies || 0),
+          profitYoyLadies: yoyRate(zTodayD[z]?.ladiesProfit || 0, zTodayD[z]?.ladiesLyProfit || 0),
+          mensBudgetRatio: budgetRate(zTodayD[z]?.mens || 0, zTodayD[z]?.mensBudget || 0),
+          ladiesBudgetRatio: budgetRate(zTodayD[z]?.ladies || 0, zTodayD[z]?.ladiesBudget || 0),
+          mensYoy: yoyRate(zTodayD[z]?.mens || 0, zTodayD[z]?.mensLy || 0),
+          ladiesYoy: yoyRate(zTodayD[z]?.ladies || 0, zTodayD[z]?.ladiesLy || 0),
+          mainMens: findMainCategory(z, '0075', direction),
+          mainLadies: findMainCategory(z, '0187', direction) };
+      })
+      .sort((a, b) => b.pct - a.pct);
+
+    const nationalChange = allZoneChanges.find(z => z.zone === '全社計');
+    const zoneOnlyChanges = allZoneChanges.filter(z => z.zone !== '全社計' && Math.abs(z.pct) >= 10);
+    const zoneUpDown = [
+      ...(nationalChange ? [nationalChange] : []),
+      ...zoneOnlyChanges.filter(z => z.pct > 0).slice(0, 3),
+      ...zoneOnlyChanges.filter(z => z.pct < 0).slice(-3).reverse()
+    ];
+    zoneUpDown.forEach(z => {
+      const isUp = z.pct > 0;
+      let tempNote = '';
+      if (Math.abs(z.tempDiff) >= 2) {
+        const tempLabel = `平均気温${z.tempCompareLabel}`;
+        if (isUp  && z.tempDiff >= 2)  tempNote = `${tempLabel}+${z.tempDiff.toFixed(1)}℃ → 気温寄与の可能性`;
+        if (isUp  && z.tempDiff <= -2) tempNote = `${tempLabel}${z.tempDiff.toFixed(1)}℃ → 気温以外の要因で伸長`;
+        if (!isUp && z.tempDiff <= -2) tempNote = `${tempLabel}${z.tempDiff.toFixed(1)}℃ → 気温寄与の可能性`;
+        if (!isUp && z.tempDiff >= 2)  tempNote = `${tempLabel}+${z.tempDiff.toFixed(1)}℃にもかかわらず下落`;
+      }
+      alerts.push({ type: isUp ? 'zone_up' : 'zone_down',
+        zone: z.zone, pct: z.pct, today: z.today, prev: z.prev, tempNote, todayD, prevD,
+        compareLabel: comparison.label, compareRateLabel: comparison.rateLabel, compareDiffLabel: comparison.diffLabel,
+        todayMens: z.todayMens, prevMens: z.prevMens,
+        budgetMens: z.budgetMens, lyMens: z.lyMens, mensYoy: z.mensYoy, mensBudgetRatio: z.mensBudgetRatio,
+        profitMens: z.profitMens, lyProfitMens: z.lyProfitMens, grossRateMens: z.grossRateMens, profitYoyMens: z.profitYoyMens,
+        todayLadies: z.todayLadies, prevLadies: z.prevLadies,
+        budgetLadies: z.budgetLadies, lyLadies: z.lyLadies, ladiesYoy: z.ladiesYoy, ladiesBudgetRatio: z.ladiesBudgetRatio,
+        profitLadies: z.profitLadies, lyProfitLadies: z.lyProfitLadies, grossRateLadies: z.grossRateLadies, profitYoyLadies: z.profitYoyLadies,
+        budgetTotal: z.budgetTotal, lyTotal: z.lyTotal, yoy: z.yoy, budgetRatio: z.budgetRatio, judgment: z.judgment,
+        profitTotal: z.profitTotal, lyProfitTotal: z.lyProfitTotal, grossRateTotal: z.grossRateTotal, profitYoy: z.profitYoy,
+        mainMens: z.mainMens, mainLadies: z.mainLadies });
+    });
+
+    const subcatChanges = buildSubcatChanges();
+    const subcatUpDown = [
+      ...subcatChanges.filter(s => s.diff > 0).sort((a, b) => b.impactAmount - a.impactAmount).slice(0, 3),
+      ...subcatChanges.filter(s => s.diff < 0).sort((a, b) => b.impactAmount - a.impactAmount).slice(0, 3)
+    ];
+    subcatUpDown.forEach(s => {
+      const isUp = s.diff > 0;
+      alerts.push({
+        type: isUp ? 'subcat_up' : 'subcat_down',
+        部門名: s.bumonName,
+        カテゴリ名: s.category,
+        サブカテ名: s.subcategory,
+        pct: s.pct,
+        diff: s.diff,
+        todayAmt: s.todayAmt,
+        prevAmt: s.prevAmt,
+        profitAmt: s.profitAmt,
+        profitLyAmt: s.profitLyAmt,
+        grossRate: s.grossRate,
+        profitYoy: s.profitYoy,
+        goodZones: s.goodZones,
+        badZones: s.badZones,
+        todayD,
+        prevD,
+        compareLabel: comparison.label,
+        compareRateLabel: comparison.rateLabel,
+        compareDiffLabel: comparison.diffLabel
+      });
+    });
+
+    return alerts;
+  }
+
+  function renderSalesAlerts(bumonRows, categoryRows, weatherItems, weeks = []) {
+    const section    = document.getElementById('salesAlertSection');
+    const container  = document.getElementById('salesAlerts');
+    const countBadge = document.getElementById('salesAlertCount');
+    if (!section) return;
+
+    const period = state.periods.important;
+    const week = currentPeriodWeek('important', weeks);
+    let alertBumonRows = bumonRows || [];
+    let alertCategoryRows = categoryRows || [];
+    let alertWeatherItems = weatherItems || [];
+    if (period.mode === 'weekly' && week) {
+      const compareWeek = comparisonWeekFrom(week);
+      alertBumonRows = aggregateLegwearBumonWeek(bumonRows || [], week, week.endDate)
+        .concat(compareWeek ? aggregateLegwearBumonWeek(bumonRows || [], compareWeek, compareWeek.endDate) : []);
+      alertCategoryRows = aggregateLegwearCategoryWeek(categoryRows || [], week, week.endDate)
+        .concat(compareWeek ? aggregateLegwearCategoryWeek(categoryRows || [], compareWeek, compareWeek.endDate) : []);
+      alertWeatherItems = aggregateWeatherWeek(weatherItems || [], week, []);
+    }
+
+    const alerts = computeSalesAlerts(alertBumonRows, alertCategoryRows, alertWeatherItems);
+    if (!alerts.length) { section.hidden = true; return; }
+
+    section.hidden = false;
+    countBadge.textContent = `${alerts.length}件`;
+
+    const fmtYen  = v => v === null || typeof v === 'undefined' || Number.isNaN(Number(v)) ? '-' : Math.round(Number(v)).toLocaleString('ja-JP') + '円';
+    const fmtPct  = (t, p) => p ? ((t - p) / p * 100).toFixed(1) + '%' : '-';
+    const pctCls  = (t, p) => !p ? '' : t >= p ? 'num-good' : 'num-bad';
+    const fmtRate = v => v === null || Number.isNaN(Number(v)) ? '-' : `${Number(v).toFixed(1)}%`;
+    const rateCls = v => v === null || Number.isNaN(Number(v)) ? '' : Number(v) >= 100 ? 'num-good' : Number(v) >= 95 ? 'num-warn' : 'num-bad';
+    const fmtMargin = v => v === null || typeof v === 'undefined' || Number.isNaN(Number(v)) ? '-' : `${Number(v).toFixed(1)}%`;
+    const fmtDiff = v => {
+      const n = Number(v || 0);
+      const sign = n > 0 ? '+' : '';
+      return sign + n.toLocaleString('ja-JP') + '円';
+    };
+    const grossLine = (profit, margin, profitYoy) => `
+      <div class="sales-gross-line">
+        荒利 ${escapeHtml(fmtYen(profit))}
+        / 粗利率 ${escapeHtml(fmtMargin(margin))}
+        / 荒利前年比 <span class="${rateCls(profitYoy)}">${escapeHtml(fmtRate(profitYoy))}</span>
+      </div>`;
+    const fmtMain = item => {
+      if (!item) return '<span class="sales-main-empty">明細なし</span>';
+      const pct = item.pct === null || item.pct === undefined ? '-' : `${item.pct > 0 ? '+' : ''}${item.pct.toFixed(1)}%`;
+      const cls = item.diff >= 0 ? 'num-good' : 'num-bad';
+      return `
+        <span class="sales-main-name">${escapeHtml(item.category)} / ${escapeHtml(item.subcategory)}</span>
+        <span class="${cls}">金額影響 ${escapeHtml(fmtDiff(item.diff))}</span>
+        <span class="sales-main-amount">${escapeHtml(pct)}</span>
+        <span class="sales-main-amount">荒利 ${escapeHtml(fmtYen(item.profit))}</span>
+        <span class="${rateCls(item.profitYoy)}">荒利前年比 ${escapeHtml(fmtRate(item.profitYoy))}</span>
+      `;
+    };
+    const fmtSubcatRow = item => {
+      const pct = item.pct === null || item.pct === undefined ? '-' : `${item.pct > 0 ? '+' : ''}${item.pct.toFixed(1)}%`;
+      const yoy = item.yoy === null || item.yoy === undefined || Number.isNaN(Number(item.yoy)) ? '-' : `${Number(item.yoy).toFixed(1)}%`;
+      const cls = item.diff >= 0 ? 'num-good' : 'num-bad';
+      return `
+        <li>
+          <span class="sales-subcat-name">${escapeHtml(item.zone)}</span>
+          <span class="${cls}">${escapeHtml(fmtDiff(item.diff))}</span>
+          <span class="sales-main-amount">${escapeHtml(pct)}</span>
+          <span class="sales-zone-yoy ${rateCls(item.yoy)}">前年比 ${escapeHtml(yoy)}</span>
+          <span class="sales-zone-yoy ${rateCls(item.profitYoy)}">荒利前年比 ${escapeHtml(fmtRate(item.profitYoy))}</span>
+        </li>
+      `;
+    };
+    const fmtSubcatList = (items) => {
+      if (!items || !items.length) return '<div class="sales-main-empty">該当なし</div>';
+      return `<ol class="sales-subcat-list">${items.map(fmtSubcatRow).join('')}</ol>`;
+    };
+
+    container.innerHTML = alerts.map(a => {
+      const isUp    = a.type === 'zone_up' || a.type === 'subcat_up';
+      const isZone  = a.type === 'zone_up' || a.type === 'zone_down';
+      const arrow   = isUp ? '▲' : '▼';
+      const cls     = isUp ? 'num-good' : 'num-bad';
+      const pctStr  = (isUp ? '+' : '') + a.pct.toFixed(1) + '%';
+      const yoyStr = isZone ? fmtRate(a.yoy) : '-';
+      const budgetStr = isZone ? fmtRate(a.budgetRatio) : '-';
+      const prevAmt = isZone ? a.prev    : a.prevAmt;
+      const todAmt  = isZone ? a.today   : a.todayAmt;
+      const compareLabel = a.compareLabel || '比較日';
+      const compareRateLabel = a.compareRateLabel || '比較比';
+      const title   = isZone
+        ? `${escapeHtml(a.zone)}：<span class="${cls}">${escapeHtml(compareRateLabel)} ${pctStr}</span> <span class="${rateCls(a.yoy)}">前年比 ${yoyStr}</span> <span class="${rateCls(a.budgetRatio)}">予算比 ${budgetStr}</span>`
+        : `${escapeHtml(a.サブカテ名)}：<span class="${cls}">${escapeHtml(compareRateLabel)} ${pctStr}</span> <span class="${cls}">金額影響 ${escapeHtml(fmtDiff(a.diff))}</span>`;
+      const label   = isZone
+        ? `${escapeHtml(a.zone)}　ゾーン売上`
+        : `${escapeHtml(a.部門名)} / ${escapeHtml(a.カテゴリ名)}（全社計）`;
+      const judgment = isZone && a.judgment ? `
+        <div class="sales-judgment ${escapeAttribute(a.judgment.className || '')}">
+          2軸判定：${escapeHtml(a.judgment.label)}
+        </div>` : '';
+      const subcatZoneBlock = !isZone ? `
+        <div class="sales-zone-subcats">
+          <div class="sales-zone-subcat-group">
+            <div class="sales-zone-subcat-title num-good">良いゾーン 上位3</div>
+            ${fmtSubcatList(a.goodZones)}
+          </div>
+          <div class="sales-zone-subcat-group">
+            <div class="sales-zone-subcat-title num-bad">悪いゾーン 上位3</div>
+            ${fmtSubcatList(a.badZones)}
+          </div>
+        </div>` : '';
+
+      // ゾーンカードのみ：メンズ・レディース内訳
+      const bumonBreakdown = isZone ? `
+        <div class="sales-alert-breakdown">
+          <div class="sales-alert-bumon">
+            <div class="sales-alert-bumon-head">
+              <span>メンズ</span>
+              <span>
+                <span class="${pctCls(a.todayMens, a.prevMens)}">${escapeHtml(compareLabel)} ${fmtPct(a.todayMens, a.prevMens)}</span>
+                <span class="${rateCls(a.mensYoy)}">前年 ${fmtRate(a.mensYoy)}</span>
+                <span class="${rateCls(a.mensBudgetRatio)}">予算 ${fmtRate(a.mensBudgetRatio)}</span>
+                <span class="sales-alert-amount">${fmtYen(a.prevMens)} → ${fmtYen(a.todayMens)}</span>
+              </span>
+            </div>
+            <div class="sales-alert-main">${fmtMain(a.mainMens)}</div>
+            ${grossLine(a.profitMens, a.grossRateMens, a.profitYoyMens)}
+          </div>
+          <div class="sales-alert-bumon">
+            <div class="sales-alert-bumon-head">
+              <span>レディース</span>
+              <span>
+                <span class="${pctCls(a.todayLadies, a.prevLadies)}">${escapeHtml(compareLabel)} ${fmtPct(a.todayLadies, a.prevLadies)}</span>
+                <span class="${rateCls(a.ladiesYoy)}">前年 ${fmtRate(a.ladiesYoy)}</span>
+                <span class="${rateCls(a.ladiesBudgetRatio)}">予算 ${fmtRate(a.ladiesBudgetRatio)}</span>
+                <span class="sales-alert-amount">${fmtYen(a.prevLadies)} → ${fmtYen(a.todayLadies)}</span>
+              </span>
+            </div>
+            <div class="sales-alert-main">${fmtMain(a.mainLadies)}</div>
+            ${grossLine(a.profitLadies, a.grossRateLadies, a.profitYoyLadies)}
+          </div>
+        </div>` : '';
+
+      return `<article class="card">
+        <div class="meta">
+          <span>${escapeHtml(a.todayD)}</span>
+          <span>${escapeHtml(isZone ? 'ゾーン' : 'サブカテゴリ')}</span>
+          <span class="${cls}" style="font-weight:800">${arrow} ${label}</span>
+        </div>
+        <div class="card-title">${title}</div>
+        <div style="font-size:13px;color:var(--muted)">
+          合計　${escapeHtml(compareLabel)}（${escapeHtml(a.prevD)}）${fmtYen(prevAmt)} → 本日 ${fmtYen(todAmt)}
+          ${isZone ? ` / 予算 ${fmtYen(a.budgetTotal)} / 前年同週 ${fmtYen(a.lyTotal)}` : ''}
+        </div>
+        ${isZone
+          ? grossLine(a.profitTotal, a.grossRateTotal, a.profitYoy)
+          : grossLine(a.profitAmt, a.grossRate, a.profitYoy)}
+        ${judgment}
+        ${bumonBreakdown}
+        ${subcatZoneBlock}
+        ${a.tempNote ? `<div class="action" style="font-size:12px;margin-top:6px">🌡️ ${escapeHtml(a.tempNote)}</div>` : ''}
+      </article>`;
+    }).join('');
+  }
+
+  function renderWeather(items, trendItems, zoneOrder, allWeatherRows = items, weeks = []) {
+    const period = state.periods.weather;
+    const week = currentPeriodWeek('weather', weeks);
+    const latest = period.mode === 'weekly' && week ? aggregateWeatherWeek(allWeatherRows, week, zoneOrder) : items;
+    bindPeriodControls('weather', weeks, () => renderWeather(items, trendItems, zoneOrder, allWeatherRows, weeks));
+    renderCards('weatherCards', latest, (item) => `
+      <article class="card">
+        <div class="meta">
+          <span>${escapeHtml(period.mode === 'weekly' && week ? `W${week.weekNo} ${periodRangeText(week.startDate, week.endDate)}` : item.date)}</span>
+          <span>${escapeHtml(item.zone)}</span>
+        </div>
+        <div class="card-title">
+          ${escapeHtml(item.area_name)}：
+          <span class="${tempCompareClass(item.max_temp, item.last_year_max_temp)}">最高${escapeHtml(item.max_temp)}℃</span>
+        </div>
+        <div>
+          <span class="${tempCompareClass(item.min_temp, item.last_year_min_temp)}">最低${escapeHtml(item.min_temp)}℃</span>
+          / 降水量${escapeHtml(item.rain_mm)}mm
+        </div>
+        <div>
+          前週同曜日差 <span class="${tempDiffClass(item.temp_vs_last_week)}">${formatTempDiffOrDash(item.temp_vs_last_week)}℃</span>
+          / 前日差 <span class="${tempDiffClass(item.temp_vs_yesterday)}">${formatTempDiffOrDash(item.temp_vs_yesterday)}℃</span>
+          / 前年差 <span class="${tempDiffClass(item.temp_vs_last_year_same_weekday)}">${formatTempDiffOrDash(item.temp_vs_last_year_same_weekday)}℃</span>
+          / 昨年 ${escapeHtml(item.last_year_same_weekday_date || '-')}
+        </div>
+        <div class="action">${escapeHtml(item.weather_alert)}</div>
+      </article>
+    `);
+
+    const tbody = document.getElementById('weatherTable');
+    tbody.innerHTML = items.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.date)}</td>
+        <td>${escapeHtml(item.zone)}</td>
+        <td>${escapeHtml(item.max_temp)}℃</td>
+        <td>${escapeHtml(item.min_temp)}℃</td>
+        <td>${escapeHtml(item.rain_mm)}mm</td>
+        <td>${formatTempDiffOrDash(item.temp_vs_last_week)}℃</td>
+        <td>${formatTempDiffOrDash(item.temp_vs_last_year_same_weekday)}℃</td>
+        <td>${escapeHtml(item.last_year_same_weekday_date || '-')}</td>
+        <td>${escapeHtml(item.weather_alert)}</td>
+      </tr>
+    `).join('');
+    renderWeatherTrend(trendItems || [], latest, zoneOrder || []);
+  }
+
+  function aggregateWeatherWeek(rows, week, zoneOrder) {
+    const grouped = {};
+    rows.filter((row) => rowInWeek(row, week)).forEach((row) => {
+      const zone = row.zone || '';
+      if (!zone) return;
+      if (!grouped[zone]) {
+        grouped[zone] = {
+          date: periodRangeText(week.startDate, week.endDate),
+          week: week.weekNo,
+          zone,
+          area_name: row.area_name || zone,
+          max_temp: null,
+          min_temp: null,
+          rain_mm: 0,
+          temp_vs_yesterday: '',
+          temp_vs_last_week_values: [],
+          temp_vs_last_year_values: [],
+          last_year_same_weekday_date: periodRangeText(week.compareStartDate, week.compareEndDate),
+          weather_alerts: []
+        };
+      }
+      const item = grouped[zone];
+      const maxTemp = numberOrNaN(row.max_temp);
+      const minTemp = numberOrNaN(row.min_temp);
+      const rain = numberOrNaN(row.rain_mm);
+      const weekDiff = numberOrNaN(row.temp_vs_last_week);
+      const yearDiff = numberOrNaN(row.temp_vs_last_year_same_weekday);
+      if (!Number.isNaN(maxTemp)) item.max_temp = item.max_temp === null ? maxTemp : Math.max(item.max_temp, maxTemp);
+      if (!Number.isNaN(minTemp)) item.min_temp = item.min_temp === null ? minTemp : Math.min(item.min_temp, minTemp);
+      if (!Number.isNaN(rain)) item.rain_mm += rain;
+      if (!Number.isNaN(weekDiff)) item.temp_vs_last_week_values.push(weekDiff);
+      if (!Number.isNaN(yearDiff)) item.temp_vs_last_year_values.push(yearDiff);
+      if (row.weather_alert && !String(row.weather_alert).includes('通常観測')) item.weather_alerts.push(row.weather_alert);
+    });
+    const avg = (values) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10 : '';
+    const result = Object.values(grouped).map((item) => ({
+      ...item,
+      max_temp: item.max_temp === null ? '' : item.max_temp,
+      min_temp: item.min_temp === null ? '' : item.min_temp,
+      rain_mm: Math.round(item.rain_mm * 10) / 10,
+      temp_vs_last_week: avg(item.temp_vs_last_week_values),
+      temp_vs_last_year_same_weekday: avg(item.temp_vs_last_year_values),
+      weather_alert: item.weather_alerts.length ? [...new Set(item.weather_alerts)].slice(0, 3).join(' / ') : `${item.zone}：通常観測`
+    }));
+    return sortRowsByZoneName(result, zoneOrder || []);
+  }
+
+  function sortRowsByZoneName(rows, zoneOrder) {
+    const ordered = zoneOrder && zoneOrder.length ? zoneOrder : ZONE_ORDER_NS;
+    return [...rows].sort((a, b) => {
+      const ai = ordered.indexOf(a.zone);
+      const bi = ordered.indexOf(b.zone);
+      if (ai === -1 && bi === -1) return String(a.zone).localeCompare(String(b.zone), 'ja');
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }
+
+  function comparisonWeekFrom(week) {
+    if (!week || !week.compareStartDate || !week.compareEndDate) return null;
+    return {
+      key: week.compareKey || week.compareEndDate,
+      label: `W${week.compareWeekNo || ''} ${periodRangeText(week.compareStartDate, week.compareEndDate)}`,
+      weekNo: week.compareWeekNo,
+      startDate: week.compareStartDate,
+      endDate: week.compareEndDate
+    };
+  }
+
+  function aggregateLegwearBumonWeek(rows, week, dateKey) {
+    if (!week) return [];
+    const grouped = {};
+    (rows || []).filter((row) => rowInWeek(row, week)).forEach((row) => {
+      const key = [
+        row.zone_code || '',
+        row.zone_name || '',
+        row['部門CD'] || '',
+        row['部門名'] || ''
+      ].join('|');
+      if (!grouped[key]) {
+        grouped[key] = {
+          ...row,
+          date: dateKey || week.endDate,
+          week_no: week.weekNo,
+          weekday: '週累計',
+          '売上予算': 0,
+          '売上実績': 0,
+          '前年同週同曜日実績': 0,
+          '販売荒利高': 0,
+          '前年荒利高': 0,
+          hasBudget: false,
+          hasActual: false,
+          hasLy: false,
+          hasProfit: false,
+          hasLyProfit: false
+        };
+      }
+      const target = grouped[key];
+      if (hasValue(row['売上予算'])) { target['売上予算'] += Number(row['売上予算'] || 0); target.hasBudget = true; }
+      if (hasValue(row['売上実績'])) { target['売上実績'] += Number(row['売上実績'] || 0); target.hasActual = true; }
+      if (hasValue(row['前年同週同曜日実績'])) { target['前年同週同曜日実績'] += Number(row['前年同週同曜日実績'] || 0); target.hasLy = true; }
+      const profit = grossProfitFromRow(row, '売上実績');
+      const lyProfit = lastYearGrossProfitFromRow(row);
+      if (!Number.isNaN(profit)) { target['販売荒利高'] += profit; target.hasProfit = true; }
+      if (!Number.isNaN(lyProfit)) { target['前年荒利高'] += lyProfit; target.hasLyProfit = true; }
+    });
+    return Object.values(grouped).map((row) => {
+      const actual = Number(row['売上実績'] || 0);
+      const budget = Number(row['売上予算'] || 0);
+      const ly = Number(row['前年同週同曜日実績'] || 0);
+      row['売上予算'] = row.hasBudget ? row['売上予算'] : '';
+      row['売上実績'] = row.hasActual ? row['売上実績'] : '';
+      row['前年同週同曜日実績'] = row.hasLy ? row['前年同週同曜日実績'] : '';
+      row['販売荒利高'] = row.hasProfit ? row['販売荒利高'] : '';
+      row['前年荒利高'] = row.hasLyProfit ? row['前年荒利高'] : '';
+      row['達成率'] = row.hasBudget && budget ? actual / budget * 100 : '';
+      row['前年比'] = row.hasLy && ly ? actual / ly * 100 : '';
+      row['荒利率'] = row.hasProfit ? grossMarginRate(row['販売荒利高'], actual) : '';
+      return row;
+    });
+  }
+
+  function aggregateLegwearCategoryWeek(rows, week, dateKey) {
+    if (!week) return [];
+    const grouped = {};
+    (rows || []).filter((row) => rowInWeek(row, week)).forEach((row) => {
+      const key = [
+        row.zone_code || '',
+        row.zone_name || '',
+        row['部門CD'] || '',
+        row['部門名'] || '',
+        row['カテゴリCD'] || '',
+        row['カテゴリ名'] || '',
+        row['サブカテCD'] || '',
+        row['サブカテ名'] || ''
+      ].join('|');
+      if (!grouped[key]) {
+        grouped[key] = {
+          ...row,
+          date: dateKey || week.endDate,
+          week_no: week.weekNo,
+          weekday: '週累計',
+          '実績数量': 0,
+          '実績金額': 0,
+          '前年同週同曜日数量': 0,
+          '前年同週同曜日実績': 0,
+          '販売荒利高': 0,
+          '前年荒利高': 0,
+          hasLy: false,
+          hasProfit: false,
+          hasLyProfit: false
+        };
+      }
+      const target = grouped[key];
+      target['実績数量'] += Number(row['実績数量'] || 0);
+      target['実績金額'] += Number(row['実績金額'] || 0);
+      if (hasValue(row['前年同週同曜日数量'])) { target['前年同週同曜日数量'] += Number(row['前年同週同曜日数量'] || 0); target.hasLy = true; }
+      if (hasValue(row['前年同週同曜日実績'])) { target['前年同週同曜日実績'] += Number(row['前年同週同曜日実績'] || 0); target.hasLy = true; }
+      const profit = grossProfitFromRow(row, '実績金額');
+      const lyProfit = lastYearGrossProfitFromRow(row);
+      if (!Number.isNaN(profit)) { target['販売荒利高'] += profit; target.hasProfit = true; }
+      if (!Number.isNaN(lyProfit)) { target['前年荒利高'] += lyProfit; target.hasLyProfit = true; }
+    });
+    return Object.values(grouped).map((row) => {
+      const amount = Number(row['実績金額'] || 0);
+      const lyAmount = Number(row['前年同週同曜日実績'] || 0);
+      row['前年同週同曜日数量'] = row.hasLy ? row['前年同週同曜日数量'] : '';
+      row['前年同週同曜日実績'] = row.hasLy ? row['前年同週同曜日実績'] : '';
+      row['販売荒利高'] = row.hasProfit ? row['販売荒利高'] : '';
+      row['前年荒利高'] = row.hasLyProfit ? row['前年荒利高'] : '';
+      row['昨年対比'] = row.hasLy && lyAmount ? amount / lyAmount * 100 : '';
+      row['荒利率'] = row.hasProfit ? grossMarginRate(row['販売荒利高'], amount) : '';
+      return row;
+    });
+  }
+
+  function renderWeatherTrend(trendItems, todayItems, zoneOrder) {
+    const select = document.getElementById('weatherZoneSelect');
+    const chart = document.getElementById('weatherTrendChart');
+    if (!select || !chart) return;
+
+    const available = new Set(trendItems.map((item) => item.zone).filter(Boolean));
+    const zones = [
+      ...zoneOrder.filter((zone) => available.has(zone)),
+      ...[...available].filter((zone) => !zoneOrder.includes(zone)).sort((a, b) => String(a).localeCompare(String(b), 'ja'))
+    ];
+    if (!zones.length) {
+      select.innerHTML = '<option value="">データなし</option>';
+      drawEmptyChart(chart, '天気データがまだありません');
+      return;
+    }
+
+    const preferred = todayItems.find((item) => Number(item.max_temp || 0) >= 25)?.zone ||
+      todayItems[0]?.zone ||
+      zones[0];
+    const current = zones.includes(select.value) ? select.value : preferred;
+    select.innerHTML = zones.map((zone) => `
+      <option value="${escapeAttribute(zone)}" ${zone === current ? 'selected' : ''}>${escapeHtml(zone)}</option>
+    `).join('');
+    select.onchange = () => {
+      window.requestAnimationFrame(() => drawWeatherChart(chart, trendItems, select.value));
+    };
+    window.requestAnimationFrame(() => drawWeatherChart(chart, trendItems, select.value || current));
+  }
+
+  function drawWeatherChart(chart, trendItems, zone) {
+    const rows = trendItems
+      .filter((item) => item.zone === zone)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    if (!rows.length) {
+      drawEmptyChart(chart, 'このゾーンの天気データがありません');
+      return;
+    }
+
+    const width = 920;
+    const height = 190;
+    const padding = { top: 16, right: 16, bottom: 36, left: 42 };
+    const plotW = width - padding.left - padding.right;
+    const plotH = height - padding.top - padding.bottom;
+    const temps = rows.flatMap((row) => [
+      numberOrNaN(row.max_temp),
+      numberOrNaN(row.min_temp),
+      numberOrNaN(row.last_year_max_temp),
+      numberOrNaN(row.last_year_min_temp)
+    ]).filter((value) => !Number.isNaN(value));
+    if (!temps.length) {
+      drawEmptyChart(chart, 'このゾーンの気温データがありません');
+      return;
+    }
+    const minY = Math.floor(Math.min(...temps) / 5) * 5 - 2;
+    const maxY = Math.ceil(Math.max(...temps) / 5) * 5 + 2;
+    const x = (index) => padding.left + (rows.length === 1 ? plotW / 2 : (plotW * index) / (rows.length - 1));
+    const y = (value) => padding.top + plotH - ((Number(value) - minY) / (maxY - minY || 1)) * plotH;
+
+    const grid = [];
+    for (let tick = minY; tick <= maxY; tick += 5) {
+      const ty = y(tick);
+      grid.push(`
+        <line x1="${padding.left}" y1="${ty}" x2="${width - padding.right}" y2="${ty}" stroke="#d8e2ec" stroke-width="1" />
+        <text x="4" y="${ty + 4}" fill="#62748a" font-size="12">${tick}℃</text>
+      `);
+    }
+
+    const labels = rows.map((row, index) => {
+      if (index % Math.ceil(rows.length / 7) !== 0 && index !== rows.length - 1) return;
+      const label = String(row.date).slice(5);
+      return `<text x="${x(index) - 15}" y="${height - 14}" fill="#334e68" font-size="12">${escapeHtml(label)}</text>`;
+    }).filter(Boolean);
+
+    const forecastDots = rows.map((row, index) => {
+      if (row.source !== 'forecast' || Number.isNaN(numberOrNaN(row.max_temp))) return '';
+      return `<circle cx="${x(index)}" cy="${y(row.max_temp)}" r="4" fill="#f59e0b" />`;
+    }).join('');
+    const hitDots = rows.map((row, index) => {
+      const value = numberOrNaN(row.max_temp);
+      if (Number.isNaN(value)) return '';
+      return `
+        <circle
+          class="chart-hit"
+          cx="${x(index)}"
+          cy="${y(value)}"
+          r="11"
+          fill="transparent"
+          tabindex="0"
+          data-tooltip="${escapeAttribute(buildWeatherTooltip(row))}"
+        />
+      `;
+    }).join('');
+
+    chart.innerHTML = `
+      <div class="chart-tooltip" hidden></div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(zone)}の気温推移" preserveAspectRatio="none">
+        ${grid.join('')}
+        ${buildSvgPath(rows, x, y, 'max_temp', '#1f5f99')}
+        ${buildSvgPath(rows, x, y, 'min_temp', '#64748b')}
+        ${buildSvgPath(rows, x, y, 'last_year_max_temp', '#8b5cf6', true)}
+        ${buildSvgPath(rows, x, y, 'last_year_min_temp', '#94a3b8', true)}
+        ${forecastDots}
+        ${hitDots}
+        ${labels.join('')}
+      </svg>
+    `;
+    bindChartTooltip(chart);
+  }
+
+  function buildWeatherTooltip(row) {
+    const type = row.source === 'forecast' ? '予報' : '実績';
+    return [
+      `${row.date} ${row.zone}（${type}）`,
+      `最高 ${formatTemp(row.max_temp)} / 最低 ${formatTemp(row.min_temp)}`,
+      `昨年最高 ${formatTemp(row.last_year_max_temp)} / 昨年最低 ${formatTemp(row.last_year_min_temp)}`,
+      `降水量 ${formatMm(row.rain_mm)}`
+    ].join('\n');
+  }
+
+  function bindChartTooltip(chart) {
+    const tooltip = chart.querySelector('.chart-tooltip');
+    if (!tooltip) return;
+
+    const show = (target, event) => {
+      const text = target.getAttribute('data-tooltip');
+      if (!text) return;
+      tooltip.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+      tooltip.hidden = false;
+      move(event);
+    };
+    const move = (event) => {
+      if (tooltip.hidden || !event) return;
+      const rect = chart.getBoundingClientRect();
+      const x = Math.min(Math.max(event.clientX - rect.left + 12, 8), rect.width - tooltip.offsetWidth - 8);
+      const y = Math.min(Math.max(event.clientY - rect.top - tooltip.offsetHeight - 10, 8), rect.height - tooltip.offsetHeight - 8);
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+    };
+    const hide = () => {
+      tooltip.hidden = true;
+    };
+
+    chart.querySelectorAll('.chart-hit').forEach((dot) => {
+      dot.addEventListener('mouseenter', (event) => show(dot, event));
+      dot.addEventListener('mousemove', move);
+      dot.addEventListener('mouseleave', hide);
+      dot.addEventListener('focus', (event) => show(dot, event));
+      dot.addEventListener('blur', hide);
+    });
+  }
+
+  function buildSvgPath(rows, x, y, key, color, dashed) {
+    const segments = [];
+    let points = [];
+    rows.forEach((row, index) => {
+      const value = numberOrNaN(row[key]);
+      if (Number.isNaN(value)) {
+        if (points.length) segments.push(points);
+        points = [];
+        return;
+      }
+      points.push([x(index), y(value)]);
+    });
+    if (points.length) segments.push(points);
+    return segments.map((segment) => {
+      if (segment.length === 1) {
+        return `<circle cx="${segment[0][0]}" cy="${segment[0][1]}" r="3" fill="${color}" />`;
+      }
+      const d = segment.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point[0]} ${point[1]}`).join(' ');
+      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${dashed ? 1.8 : 2.6}" stroke-linecap="round" stroke-linejoin="round" ${dashed ? 'stroke-dasharray="6 5"' : ''} />`;
+    }).join('');
+  }
+
+  function numberOrNaN(value) {
+    if (value === '' || value === null || typeof value === 'undefined') return NaN;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : NaN;
+  }
+
+  function formatTemp(value) {
+    const number = numberOrNaN(value);
+    return Number.isNaN(number) ? '-' : `${number}℃`;
+  }
+
+  function formatMm(value) {
+    const number = numberOrNaN(value);
+    return Number.isNaN(number) ? '-' : `${number}mm`;
+  }
+
+  function tempCompareClass(current, lastYear) {
+    const currentNumber = numberOrNaN(current);
+    const lastYearNumber = numberOrNaN(lastYear);
+    if (Number.isNaN(currentNumber) || Number.isNaN(lastYearNumber)) return 'temp-neutral';
+    if (currentNumber > lastYearNumber) return 'temp-hot';
+    if (currentNumber < lastYearNumber) return 'temp-cool';
+    return 'temp-neutral';
+  }
+
+  function formatTempDiffOrDash(value) {
+    if (value === '' || value === null || typeof value === 'undefined') return '-';
+    const number = Number(value);
+    if (Number.isNaN(number)) return '-';
+    if (number === 0) return '±0';
+    return number > 0 ? `+${number}` : `${number}`;
+  }
+
+  function tempDiffClass(value) {
+    const number = numberOrNaN(value);
+    if (Number.isNaN(number) || number === 0) return 'temp-neutral';
+    return number > 0 ? 'temp-hot' : 'temp-cool';
+  }
+
+  function drawEmptyChart(chart, message) {
+    chart.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+  }
+
+  // ── 売上タブ ──────────────────────────────────────────────────────────────
+  function renderSales(allRows, dates, weeks = []) {
+    const container = document.getElementById('salesContent');
+    const select = document.getElementById('salesDateSelect');
+    const period = state.periods.sales;
+    const week = currentPeriodWeek('sales', weeks);
+    const useWeekly = period.mode === 'weekly' && week;
+    bindPeriodControls('sales', weeks, () => renderSales(allRows, dates, weeks));
+
+    if (!dates.length && !useWeekly) {
+      select.innerHTML = '<option>データなし</option>';
+      container.innerHTML = '<div class="empty">売上データはまだありません。</div>';
+      return;
+    }
+
+    select.innerHTML = useWeekly
+      ? `<option value="${escapeAttribute(week.endDate)}">${escapeHtml(week.label)}</option>`
+      : dates.map((d) => `<option value="${escapeAttribute(d)}">${escapeHtml(d)}</option>`).join('');
+    select.disabled = !!useWeekly;
+
+    const renderForDate = (date) => {
+      const rows = useWeekly
+        ? aggregateLegwearBumonWeek(allRows, week, week.endDate)
+        : allRows.filter((r) => r.date === date);
+      if (!rows.length) {
+        container.innerHTML = '<div class="empty">この日のデータはありません。</div>';
+        return;
+      }
+
+      // ゾーン一覧を取得（全社計を先頭、残りは名前順）
+      const totalRows = rows.filter((r) => String(r.zone_code || '').padStart(4, '0') === '0000' || r.zone_name === '全社計');
+      const zoneRows  = rows.filter((r) => String(r.zone_code || '').padStart(4, '0') !== '0000' && r.zone_name !== '全社計');
+      const zoneNames = sortZonesNS([...new Set(zoneRows.map((r) => r.zone_name))]);
+      const allZones  = totalRows.length
+        ? [{ name: '全社計', isTotal: true }, ...zoneNames.map((n) => ({ name: n, isTotal: false }))]
+        : zoneNames.map((n) => ({ name: n, isTotal: false }));
+
+      const makeCol = (row) => {
+        if (!row) return { budget: NaN, actual: NaN, ratio: NaN, ly: NaN, yoy: NaN, profit: NaN, grossRate: NaN, lyProfit: NaN, profitYoy: null };
+        const actual = numberOrNaN(row['売上実績']);
+        const profit = grossProfitFromRow(row, '売上実績');
+        const grossRate = !Number.isNaN(normalizePercentValue(row['荒利率']))
+          ? normalizePercentValue(row['荒利率'])
+          : grossMarginRate(profit, actual);
+        const lyProfit = lastYearGrossProfitFromRow(row);
+        return {
+          budget: numberOrNaN(row['売上予算']),
+          actual,
+          ratio:  numberOrNaN(row['達成率']),
+          ly:     numberOrNaN(row['前年同週同曜日実績']),
+          yoy:    numberOrNaN(row['前年比']),
+          profit,
+          grossRate,
+          lyProfit,
+          profitYoy: yoyRateValue(profit, lyProfit)
+        };
+      };
+
+      const pctClass = (v) => v === null || Number.isNaN(Number(v)) ? '' : Number(v) >= 100 ? 'num-good' : Number(v) >= 95 ? 'num-warn' : 'num-bad';
+
+      const colHtml = (label, col) => `
+        <div class="zs-col">
+          <div class="zs-col-head">${label}</div>
+          <div class="zs-kpi"><span class="zs-kpi-l">予算</span><span class="zs-kpi-v">${Number.isNaN(col.budget) ? '-' : col.budget.toLocaleString('ja-JP')}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">実績</span><span class="zs-kpi-v">${Number.isNaN(col.actual) ? '-' : col.actual.toLocaleString('ja-JP')}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">達成率</span><span class="zs-kpi-v ${pctClass(col.ratio)}">${Number.isNaN(col.ratio) ? '-' : col.ratio.toFixed(1) + '%'}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">前年同週</span><span class="zs-kpi-v">${Number.isNaN(col.ly) ? '-' : col.ly.toLocaleString('ja-JP')}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">前年比</span><span class="zs-kpi-v ${pctClass(col.yoy)}">${Number.isNaN(col.yoy) ? '-' : col.yoy.toFixed(1) + '%'}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">荒利</span><span class="zs-kpi-v">${Number.isNaN(col.profit) ? '-' : Math.round(col.profit).toLocaleString('ja-JP')}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">粗利率</span><span class="zs-kpi-v">${Number.isNaN(col.grossRate) ? '-' : col.grossRate.toFixed(1) + '%'}</span></div>
+          <div class="zs-kpi"><span class="zs-kpi-l">荒利前年比</span><span class="zs-kpi-v ${pctClass(col.profitYoy)}">${col.profitYoy === null || Number.isNaN(Number(col.profitYoy)) ? '-' : Number(col.profitYoy).toFixed(1) + '%'}</span></div>
+        </div>`;
+
+      container.innerHTML = '<div class="zs-grid">' + allZones.map(({ name, isTotal }) => {
+        const zr = isTotal ? totalRows : rows.filter((r) => r.zone_name === name);
+        const mens   = makeCol(zr.find((r) => String(r['部門CD']).padStart(4,'0') === '0075'));
+        const ladies = makeCol(zr.find((r) => String(r['部門CD']).padStart(4,'0') === '0187'));
+
+        // 合計（データから直接or計算）
+        const totalActual = (!Number.isNaN(mens.actual) ? mens.actual : 0) + (!Number.isNaN(ladies.actual) ? ladies.actual : 0);
+        const totalBudget = (!Number.isNaN(mens.budget) ? mens.budget : 0) + (!Number.isNaN(ladies.budget) ? ladies.budget : 0);
+        const totalLy     = (!Number.isNaN(mens.ly) ? mens.ly : 0) + (!Number.isNaN(ladies.ly) ? ladies.ly : 0);
+        const totalProfit = (!Number.isNaN(mens.profit) ? mens.profit : 0) + (!Number.isNaN(ladies.profit) ? ladies.profit : 0);
+        const totalLyProfit = (!Number.isNaN(mens.lyProfit) ? mens.lyProfit : 0) + (!Number.isNaN(ladies.lyProfit) ? ladies.lyProfit : 0);
+        const totalRatio  = totalBudget ? Math.round(totalActual / totalBudget * 1000) / 10 : NaN;
+        const totalYoy    = totalLy     ? Math.round(totalActual / totalLy     * 1000) / 10 : NaN;
+        const total = {
+          budget: totalBudget || NaN,
+          actual: totalActual || NaN,
+          ratio: totalRatio,
+          ly: totalLy || NaN,
+          yoy: totalYoy,
+          profit: totalProfit || NaN,
+          grossRate: grossMarginRate(totalProfit, totalActual),
+          lyProfit: totalLyProfit || NaN,
+          profitYoy: yoyRateValue(totalProfit, totalLyProfit)
+        };
+
+        return `<article class="card zs-card${isTotal ? ' zs-card-total' : ''}">
+          <div class="zs-card-head">${escapeHtml(name)}</div>
+          <div class="zs-cols">
+            ${colHtml('メンズ', mens)}
+            ${colHtml('レディース', ladies)}
+            ${colHtml('合計', total)}
+          </div>
+        </article>`;
+      }).join('') + '</div>';
+    };
+
+    select.onchange = () => { if (!useWeekly) renderForDate(select.value); };
+    renderForDate(useWeekly ? week.endDate : dates[0]);
+  }
+
+  // ── カテゴリタブ ──────────────────────────────────────────────────────────
+  function renderCategory(allRows, dates, weeks = []) {
+    const dateSelect = document.getElementById('categoryDateSelect');
+    const zoneSelect = document.getElementById('categoryZoneSelect');
+    const bumonSelect = document.getElementById('categoryBumonSelect');
+    const period = state.periods.category;
+    const week = currentPeriodWeek('category', weeks);
+    const useWeekly = period.mode === 'weekly' && week;
+    bindPeriodControls('category', weeks, () => renderCategory(allRows, dates, weeks));
+
+    const categoryCompareAmountHead = document.getElementById('categoryCompareAmountHead');
+    const categoryCompareRateHead = document.getElementById('categoryCompareRateHead');
+    if (categoryCompareAmountHead) categoryCompareAmountHead.textContent = useWeekly ? '売上前週累計実績' : '売上前週同曜日実績';
+    if (categoryCompareRateHead) categoryCompareRateHead.textContent = useWeekly ? '前週累計比' : '前週比';
+
+    if (useWeekly) {
+      const compareWeek = comparisonWeekFrom(week);
+      allRows = aggregateLegwearCategoryWeek(allRows, week, week.endDate)
+        .concat(compareWeek ? aggregateLegwearCategoryWeek(allRows, compareWeek, compareWeek.endDate) : []);
+      dates = [week.endDate, compareWeek && compareWeek.endDate].filter(Boolean);
+    }
+
+    if (!dates.length) {
+      dateSelect.innerHTML = '<option>データなし</option>';
+      document.getElementById('categoryTableBody').innerHTML =
+        '<tr><td colspan="13">売上データはまだありません。</td></tr>';
+      return;
+    }
+
+    dateSelect.innerHTML = useWeekly
+      ? `<option value="${escapeAttribute(week.endDate)}">${escapeHtml(week.label)}</option>`
+      : dates.map((d) => `<option value="${escapeAttribute(d)}">${escapeHtml(d)}</option>`).join('');
+    dateSelect.disabled = !!useWeekly;
+
+    const rebuildZones = (date) => {
+      // 全社計行を除いた実ゾーン一覧を構築
+      const rows = allRows.filter((r) => r.date === date
+        && r.zone_name !== '全社計'
+        && String(r.zone_code || '').padStart(4, '0') !== '0000');
+      const zones = sortZonesNS([...new Set(rows.map((r) => r.zone_name).filter(Boolean))]);
+      const all = ['全ゾーン', ...zones];
+      const prev = zoneSelect.value;
+      zoneSelect.innerHTML = all.map((z) => `<option value="${escapeAttribute(z)}">${escapeHtml(z)}</option>`).join('');
+      if (all.includes(prev)) zoneSelect.value = prev;
+    };
+
+    const renderTable = () => {
+      const date = dateSelect.value;
+      const comparison = pickComparisonDate(dates, date);
+      const prevDate = comparison.date;
+      const zone = zoneSelect.value;
+      const bumon = bumonSelect.value;
+      const isAggrRow = (r) =>
+        r.zone_name === '全社計' || String(r.zone_code || '').padStart(4, '0') === '0000';
+      const pickRows = (targetDate) => {
+        let picked;
+        if (!zone || zone === '全ゾーン') {
+          // 全ゾーン：Pythonが正しく合算した全社計行を使う（前年比の二重カウント防止）
+          picked = allRows.filter((r) => r.date === targetDate && isAggrRow(r));
+          // 全社計行がない場合は個別ゾーンを合算（ただし前年比は表示しない）
+          if (!picked.length) {
+            picked = allRows.filter((r) => r.date === targetDate && !isAggrRow(r));
+          }
+        } else {
+          // 特定ゾーン：そのゾーンの行のみ（全社計除外）
+          picked = allRows.filter((r) => r.date === targetDate && !isAggrRow(r) && r.zone_name === zone);
+        }
+        if (bumon) picked = picked.filter((r) => String(r['部門CD']).padStart(4, '0') === bumon);
+        return picked;
+      };
+      let rows = pickRows(date);
+      const prevRows = prevDate ? pickRows(prevDate) : [];
+
+      // カテゴリ×サブカテで集計（ゾーン複数の場合は合算）
+      const aggregateRows = (sourceRows) => {
+        const map = {};
+        sourceRows.forEach((r) => {
+        const key = `${r['部門CD']}|${r['部門名']}|${r['カテゴリCD']}|${r['カテゴリ名']}|${r['サブカテCD']}|${r['サブカテ名']}`;
+        if (!map[key]) {
+          map[key] = {
+            ...r,
+            '実績数量': 0,
+            '実績金額': 0,
+            '前年同週同曜日実績': 0,
+            '販売荒利高': 0,
+            '前年荒利高': 0,
+            hasLy: false,
+            hasProfit: false,
+            hasLyProfit: false
+          };
+        }
+        map[key]['実績数量'] += Number(r['実績数量'] || 0);
+        map[key]['実績金額'] += Number(r['実績金額'] || 0);
+        const profit = grossProfitFromRow(r, '実績金額');
+        const lyProfit = lastYearGrossProfitFromRow(r);
+        if (!Number.isNaN(profit)) {
+          map[key]['販売荒利高'] += profit;
+          map[key].hasProfit = true;
+        }
+        if (!Number.isNaN(lyProfit)) {
+          map[key]['前年荒利高'] += lyProfit;
+          map[key].hasLyProfit = true;
+        }
+        if (r['前年同週同曜日実績'] !== '' && r['前年同週同曜日実績'] !== null && r['前年同週同曜日実績'] !== undefined) {
+          map[key]['前年同週同曜日実績'] += Number(r['前年同週同曜日実績'] || 0);
+          map[key].hasLy = true;
+        }
+        });
+        return map;
+      };
+      const map = aggregateRows(rows);
+      const prevMap = aggregateRows(prevRows);
+      Object.keys(map).forEach((key) => {
+        if (prevMap[key]) {
+          map[key].prevDayAmt = Number(prevMap[key]['実績金額'] || 0);
+          map[key].hasPrevDay = true;
+        } else {
+          map[key].prevDayAmt = 0;
+          map[key].hasPrevDay = false;
+        }
+      });
+
+      const aggregated = Object.values(map).sort((a, b) => {
+        const bDiff = String(a['部門CD']).localeCompare(String(b['部門CD']));
+        if (bDiff !== 0) return bDiff;
+        const cDiff = String(a['カテゴリCD']).localeCompare(String(b['カテゴリCD']));
+        if (cDiff !== 0) return cDiff;
+        return String(a['サブカテCD']).localeCompare(String(b['サブカテCD']));
+      });
+
+      const tbody = document.getElementById('categoryTableBody');
+      if (!aggregated.length) {
+        tbody.innerHTML = '<tr><td colspan="13">データがありません。</td></tr>';
+        return;
+      }
+
+      const dataRow = (r, cls = '') => {
+        const prevWeekAmt = r.hasPrevDay ? Number(r.prevDayAmt || 0) : null;
+        const prevWeekPct = prevWeekAmt ? Math.round(Number(r['実績金額'] || 0) / prevWeekAmt * 1000) / 10 : null;
+        const prevWeekPctClass = prevWeekPct === null ? '' : prevWeekPct >= 100 ? 'num-good' : prevWeekPct >= 95 ? 'num-warn' : 'num-bad';
+        const lyAmt = r.hasLy ? r['前年同週同曜日実績'] : null;
+        const yoy = (lyAmt && r['実績金額']) ? Math.round(r['実績金額'] / lyAmt * 1000) / 10 : null;
+        const yoyClass = yoy === null ? '' : yoy >= 100 ? 'num-good' : yoy >= 95 ? 'num-warn' : 'num-bad';
+        const salesDiff = lyAmt !== null ? Number(r['実績金額'] || 0) - Number(lyAmt || 0) : null;
+        const salesDiffClass = salesDiff === null ? '' : salesDiff >= 0 ? 'num-good' : 'num-bad';
+        const profit = r.hasProfit ? Number(r['販売荒利高'] || 0) : null;
+        const margin = profit !== null ? grossMarginRate(profit, r['実績金額']) : null;
+        const lyProfit = r.hasLyProfit ? Number(r['前年荒利高'] || 0) : null;
+        const profitDiff = profit !== null && lyProfit !== null ? profit - lyProfit : null;
+        const profitDiffClass = profitDiff === null ? '' : profitDiff >= 0 ? 'num-good' : 'num-bad';
+        return `<tr class="${cls}">
+          <td>${escapeHtml(r['部門名'] || '')}</td>
+          <td>${escapeHtml(r['カテゴリ名'] || '')}</td>
+          <td>${escapeHtml(r['サブカテ名'] || '')}</td>
+          <td class="num">${formatNum(r['実績数量'])}</td>
+          <td class="num">${formatYen(r['実績金額'])}</td>
+          <td class="num">${prevWeekAmt !== null ? formatYen(prevWeekAmt) : '-'}</td>
+          <td class="num ${prevWeekPctClass}">${prevWeekPct !== null ? prevWeekPct.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${lyAmt !== null ? formatYen(lyAmt) : '-'}</td>
+          <td class="num ${salesDiffClass}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+          <td class="num ${yoyClass}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${profit !== null ? formatYen(profit) : '-'}</td>
+          <td class="num ${profitDiffClass}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+          <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+        </tr>`;
+      };
+
+      const subtotalRow = (label, s) => {
+        const prevWeekPct = (s.hasPrevDay && s.prevAmt) ? Math.round(s.amt / s.prevAmt * 1000) / 10 : null;
+        const prevWeekPctClass = prevWeekPct === null ? '' : prevWeekPct >= 100 ? 'num-good' : prevWeekPct >= 95 ? 'num-warn' : 'num-bad';
+        const yoy = (s.hasLy && s.lyAmt && s.amt) ? Math.round(s.amt / s.lyAmt * 1000) / 10 : null;
+        const yoyClass = yoy === null ? '' : yoy >= 100 ? 'num-good' : yoy >= 95 ? 'num-warn' : 'num-bad';
+        const salesDiff = s.hasLy ? s.amt - s.lyAmt : null;
+        const salesDiffClass = salesDiff === null ? '' : salesDiff >= 0 ? 'num-good' : 'num-bad';
+        const margin = s.hasProfit ? grossMarginRate(s.profitAmt, s.amt) : null;
+        const profitDiff = s.hasProfit && s.hasLyProfit ? s.profitAmt - s.lyProfitAmt : null;
+        const profitDiffClass = profitDiff === null ? '' : profitDiff >= 0 ? 'num-good' : 'num-bad';
+        return `<tr class="row-cat-subtotal">
+          <td></td><td colspan="2">${escapeHtml(label)}　小計</td>
+          <td class="num">${formatNum(s.qty)}</td>
+          <td class="num">${formatYen(s.amt)}</td>
+          <td class="num">${s.hasPrevDay ? formatYen(s.prevAmt) : '-'}</td>
+          <td class="num ${prevWeekPctClass}">${prevWeekPct !== null ? prevWeekPct.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${s.hasLy ? formatYen(s.lyAmt) : '-'}</td>
+          <td class="num ${salesDiffClass}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+          <td class="num ${yoyClass}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${s.hasProfit ? formatYen(s.profitAmt) : '-'}</td>
+          <td class="num ${profitDiffClass}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+          <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+        </tr>`;
+      };
+
+      const grandTotalRow = (s) => {
+        const prevWeekPct = (s.hasPrevDay && s.prevAmt) ? Math.round(s.amt / s.prevAmt * 1000) / 10 : null;
+        const prevWeekPctClass = prevWeekPct === null ? '' : prevWeekPct >= 100 ? 'num-good' : prevWeekPct >= 95 ? 'num-warn' : 'num-bad';
+        const yoy = (s.hasLy && s.lyAmt && s.amt) ? Math.round(s.amt / s.lyAmt * 1000) / 10 : null;
+        const yoyClass = yoy === null ? '' : yoy >= 100 ? 'num-good' : yoy >= 95 ? 'num-warn' : 'num-bad';
+        const salesDiff = s.hasLy ? s.amt - s.lyAmt : null;
+        const salesDiffClass = salesDiff === null ? '' : salesDiff >= 0 ? 'num-good' : 'num-bad';
+        const margin = s.hasProfit ? grossMarginRate(s.profitAmt, s.amt) : null;
+        const profitDiff = s.hasProfit && s.hasLyProfit ? s.profitAmt - s.lyProfitAmt : null;
+        const profitDiffClass = profitDiff === null ? '' : profitDiff >= 0 ? 'num-good' : 'num-bad';
+        return `<tr class="row-grand-total">
+          <td colspan="3">合　計</td>
+          <td class="num">${formatNum(s.qty)}</td>
+          <td class="num">${formatYen(s.amt)}</td>
+          <td class="num">${s.hasPrevDay ? formatYen(s.prevAmt) : '-'}</td>
+          <td class="num ${prevWeekPctClass}">${prevWeekPct !== null ? prevWeekPct.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${s.hasLy ? formatYen(s.lyAmt) : '-'}</td>
+          <td class="num ${salesDiffClass}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+          <td class="num ${yoyClass}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+          <td class="num">${s.hasProfit ? formatYen(s.profitAmt) : '-'}</td>
+          <td class="num ${profitDiffClass}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+          <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+        </tr>`;
+      };
+
+      // カテゴリ小計＋合計行を挿入しながら描画
+      let html = '';
+      let prevCatKey = null;
+      let catSub = { qty: 0, amt: 0, prevAmt: 0, hasPrevDay: false, lyAmt: 0, hasLy: false, profitAmt: 0, hasProfit: false, lyProfitAmt: 0, hasLyProfit: false, name: '' };
+      const grand = { qty: 0, amt: 0, prevAmt: 0, hasPrevDay: false, lyAmt: 0, hasLy: false, profitAmt: 0, hasProfit: false, lyProfitAmt: 0, hasLyProfit: false };
+
+      aggregated.forEach((r, i) => {
+        const catKey = `${r['部門CD']}|${r['カテゴリCD']}`;
+        if (prevCatKey !== null && prevCatKey !== catKey) {
+          html += subtotalRow(catSub.name, catSub);
+          catSub = { qty: 0, amt: 0, prevAmt: 0, hasPrevDay: false, lyAmt: 0, hasLy: false, profitAmt: 0, hasProfit: false, lyProfitAmt: 0, hasLyProfit: false, name: '' };
+        }
+        prevCatKey = catKey;
+        catSub.name = r['カテゴリ名'];
+
+        html += dataRow(r);
+
+        const ly = r.hasLy ? r['前年同週同曜日実績'] : 0;
+        const profit = r.hasProfit ? Number(r['販売荒利高'] || 0) : 0;
+        const lyProfit = r.hasLyProfit ? Number(r['前年荒利高'] || 0) : 0;
+        catSub.qty += Number(r['実績数量'] || 0);
+        catSub.amt += Number(r['実績金額'] || 0);
+        if (r.hasPrevDay) { catSub.prevAmt += Number(r.prevDayAmt || 0); catSub.hasPrevDay = true; }
+        if (r.hasLy) { catSub.lyAmt += ly; catSub.hasLy = true; }
+        if (r.hasProfit) { catSub.profitAmt += profit; catSub.hasProfit = true; }
+        if (r.hasLyProfit) { catSub.lyProfitAmt += lyProfit; catSub.hasLyProfit = true; }
+        grand.qty += Number(r['実績数量'] || 0);
+        grand.amt += Number(r['実績金額'] || 0);
+        if (r.hasPrevDay) { grand.prevAmt += Number(r.prevDayAmt || 0); grand.hasPrevDay = true; }
+        if (r.hasLy) { grand.lyAmt += ly; grand.hasLy = true; }
+        if (r.hasProfit) { grand.profitAmt += profit; grand.hasProfit = true; }
+        if (r.hasLyProfit) { grand.lyProfitAmt += lyProfit; grand.hasLyProfit = true; }
+
+        if (i === aggregated.length - 1) html += subtotalRow(catSub.name, catSub);
+      });
+      html += grandTotalRow(grand);
+      tbody.innerHTML = html;
+    };
+
+    rebuildZones(dates[0]);
+    renderTable();
+
+    dateSelect.onchange = () => { if (!useWeekly) { rebuildZones(dateSelect.value); renderTable(); } };
+    zoneSelect.onchange = renderTable;
+    bumonSelect.onchange = renderTable;
+  }
+
+  function formatYen(value) {
+    const n = numberOrNaN(value);
+    if (Number.isNaN(n)) return '-';
+    return n.toLocaleString('ja-JP') + '円';
+  }
+
+  function formatSignedYen(value) {
+    const n = numberOrNaN(value);
+    if (Number.isNaN(n)) return '-';
+    const sign = n > 0 ? '+' : '';
+    return sign + n.toLocaleString('ja-JP') + '円';
+  }
+
+  function formatPct(value) {
+    const n = numberOrNaN(value);
+    if (Number.isNaN(n)) return '-';
+    return n.toFixed(1) + '%';
+  }
+
+  function hasValue(value) {
+    return value !== '' && value !== null && typeof value !== 'undefined';
+  }
+
+  function normalizePercentValue(value) {
+    const n = numberOrNaN(value);
+    if (Number.isNaN(n)) return NaN;
+    return Math.abs(n) <= 1 ? n * 100 : n;
+  }
+
+  function grossProfitFromRow(row, amountField) {
+    const direct = numberOrNaN(row['販売荒利高']);
+    if (!Number.isNaN(direct)) return direct;
+    const rate = normalizePercentValue(row['荒利率']);
+    const amount = numberOrNaN(row[amountField]);
+    if (!Number.isNaN(rate) && !Number.isNaN(amount)) return amount * rate / 100;
+    return NaN;
+  }
+
+  function lastYearGrossProfitFromRow(row) {
+    return numberOrNaN(row['前年荒利高']);
+  }
+
+  function grossMarginRate(profit, amount) {
+    const p = numberOrNaN(profit);
+    const a = numberOrNaN(amount);
+    return Number.isNaN(p) || !a ? NaN : p / a * 100;
+  }
+
+  function yoyRateValue(actual, lastYear) {
+    const a = numberOrNaN(actual);
+    const ly = numberOrNaN(lastYear);
+    return Number.isNaN(a) || !ly ? null : a / ly * 100;
+  }
+
+  function formatNum(value) {
+    const n = numberOrNaN(value);
+    if (Number.isNaN(n)) return '-';
+    return n.toLocaleString('ja-JP');
+  }
+
+  function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks = [], comparisonDates = []) {
+    const dateSelect = document.getElementById('productDateSelect');
+    const bumonSelect = document.getElementById('productBumonSelect');
+    const categorySelect = document.getElementById('productCategorySelect');
+    const sortSelect = document.getElementById('productSortSelect');
+    const periodMode = document.getElementById('productPeriodMode');
+    const weekTabs = document.getElementById('productWeekTabs');
+    const summary = document.getElementById('productSummaryCards');
+    const cards = document.getElementById('productAnalysisCards');
+    const tbody = document.getElementById('productAnalysisTableBody');
+    const countBadge = document.getElementById('productAnalysisCount');
+    if (!dateSelect || !categorySelect || !summary || !cards || !tbody) return;
+
+    const allDataDates = (comparisonDates && comparisonDates.length ? comparisonDates : [...new Set((allRows || []).map((r) => r.date).filter(Boolean))])
+      .slice()
+      .sort()
+      .reverse();
+    const dailyDates = (dates && dates.length ? dates : allDataDates.slice(0, 1)).slice();
+    const weekWindows = (productWeeks || []).slice(0, 8);
+
+    if (!allRows.length || (!dailyDates.length && !weekWindows.length)) {
+      dateSelect.innerHTML = '<option>データなし</option>';
+      categorySelect.innerHTML = '<option value="">全カテゴリ</option>';
+      if (weekTabs) weekTabs.innerHTML = '';
+      countBadge.textContent = '0件';
+      summary.innerHTML = '';
+      cards.innerHTML = '<div class="empty">商品実績データはまだありません。</div>';
+      tbody.innerHTML = '<tr><td colspan="16">商品実績データはまだありません。</td></tr>';
+      return;
+    }
+
+    const currentDate = dateSelect.value && dailyDates.includes(dateSelect.value) ? dateSelect.value : dailyDates[0];
+    dateSelect.innerHTML = dailyDates.map((d) => `<option value="${escapeAttribute(d)}">${escapeHtml(d)}</option>`).join('');
+    dateSelect.value = currentDate;
+    let viewMode = 'daily';
+    let selectedWeekKey = weekWindows[0] ? weekWindows[0].key : '';
+    let activeRows = allRows;
+    if (!dailyDates.length && weekWindows.length) viewMode = 'weekly';
+
+    const isAggRow = (r) => r.zone_name === '全社計' || String(r.zone_code || '').padStart(4, '0') === '0000';
+    const bumonCode = (r) => String(r['部門CD'] || '').padStart(4, '0');
+    const categoryKey = (r) => `${r['カテゴリCD'] || ''}|${r['カテゴリ名'] || ''}`;
+    const productKey = (r) => [
+      bumonCode(r), r['部門名'] || '', r['カテゴリCD'] || '', r['カテゴリ名'] || '',
+      r['サブカテCD'] || '', r['サブカテ名'] || ''
+    ].join('|');
+    const selectedBumon = () => bumonSelect.value || '';
+    const selectedCategory = () => categorySelect.value || '';
+    const matchesFilters = (r) => {
+      if (selectedBumon() && bumonCode(r) !== selectedBumon()) return false;
+      if (selectedCategory() && categoryKey(r) !== selectedCategory()) return false;
+      return true;
+    };
+    const inRange = (date, start, end) => date && date >= start && date <= end;
+    const formatPeriodRange = (start, end) => start === end ? start : `${start}〜${end}`;
+    const currentWeekWindow = () => weekWindows.find((week) => week.key === selectedWeekKey) || weekWindows[0] || null;
+    const activeDateKey = () => {
+      const week = currentWeekWindow();
+      return viewMode === 'weekly' && week ? week.key : dateSelect.value;
+    };
+    const activeDisplayDate = () => {
+      const week = currentWeekWindow();
+      return viewMode === 'weekly' && week ? formatPeriodRange(week.startDate, week.endDate) : dateSelect.value;
+    };
+    const comparisonForActivePeriod = () => {
+      const week = currentWeekWindow();
+      if (viewMode === 'weekly' && week) {
+        return {
+          date: week.compareKey,
+          displayDate: formatPeriodRange(week.compareStartDate, week.compareEndDate),
+          label: '前週累計',
+          rateLabel: '前週累計比',
+          diffLabel: '前週累計差',
+          weatherDate: week.endDate,
+          weatherPrevDate: week.compareEndDate
+        };
+      }
+      return pickComparisonDate(allDataDates, dateSelect.value);
+    };
+    const addIfPresent = (target, field, row) => {
+      if (row[field] !== '' && row[field] !== null && typeof row[field] !== 'undefined') {
+        target[field] += Number(row[field] || 0);
+        return true;
+      }
+      return false;
+    };
+    const aggregatePeriodRows = (week, startDate, endDate, dateKey) => {
+      const map = {};
+      allRows.filter((row) => inRange(row.date, startDate, endDate)).forEach((row) => {
+        const key = [
+          String(row.zone_code || ''),
+          row.zone_name || '',
+          productKey(row)
+        ].join('|');
+        if (!map[key]) {
+          map[key] = {
+            ...row,
+            date: dateKey,
+            week_start: startDate,
+            week_end: endDate,
+            '実績数量': 0,
+            '実績金額': 0,
+            '前年同週同曜日数量': 0,
+            '前年同週同曜日実績': 0,
+            '販売荒利高': 0,
+            '前年荒利高': 0,
+            hasLy: false,
+            hasProfit: false,
+            hasLyProfit: false
+          };
+        }
+        map[key]['実績数量'] += Number(row['実績数量'] || 0);
+        map[key]['実績金額'] += Number(row['実績金額'] || 0);
+        map[key].hasLy = addIfPresent(map[key], '前年同週同曜日数量', row) || map[key].hasLy;
+        map[key].hasLy = addIfPresent(map[key], '前年同週同曜日実績', row) || map[key].hasLy;
+        const profit = grossProfitFromRow(row, '実績金額');
+        const lyProfit = lastYearGrossProfitFromRow(row);
+        if (!Number.isNaN(profit)) {
+          map[key]['販売荒利高'] += profit;
+          map[key].hasProfit = true;
+        }
+        if (!Number.isNaN(lyProfit)) {
+          map[key]['前年荒利高'] += lyProfit;
+          map[key].hasLyProfit = true;
+        }
+      });
+      return Object.values(map).map((row) => {
+        const amount = Number(row['実績金額'] || 0);
+        const lyAmount = Number(row['前年同週同曜日実績'] || 0);
+        row['前年同週同曜日数量'] = row.hasLy ? row['前年同週同曜日数量'] : '';
+        row['前年同週同曜日実績'] = row.hasLy ? row['前年同週同曜日実績'] : '';
+        row['販売荒利高'] = row.hasProfit ? row['販売荒利高'] : '';
+        row['前年荒利高'] = row.hasLyProfit ? row['前年荒利高'] : '';
+        row['昨年対比'] = row.hasLy && lyAmount ? amount / lyAmount * 100 : '';
+        row['荒利率'] = row.hasProfit ? grossMarginRate(row['販売荒利高'], amount) : '';
+        return row;
+      });
+    };
+    const buildWeeklyRows = () => {
+      const week = currentWeekWindow();
+      if (!week) return allRows;
+      return aggregatePeriodRows(week, week.startDate, week.endDate, week.key)
+        .concat(aggregatePeriodRows(week, week.compareStartDate, week.compareEndDate, week.compareKey));
+    };
+    const weatherByDateZone = {};
+    (weatherTrend || []).forEach((w) => {
+      if (!w.date || !w.zone) return;
+      weatherByDateZone[`${w.date}|${w.zone}`] = w;
+    });
+    const tempDiffForZone = (date, prevDate, zone) => {
+      const todayW = weatherByDateZone[`${date}|${zone}`];
+      const prevW = weatherByDateZone[`${prevDate}|${zone}`];
+      if (!todayW || !prevW) return null;
+      const todayTemp = Number(todayW.avg_temp);
+      const prevTemp = Number(prevW.avg_temp);
+      if (Number.isNaN(todayTemp) || Number.isNaN(prevTemp)) return null;
+      return Math.round((todayTemp - prevTemp) * 10) / 10;
+    };
+    const avgTempDiff = (date, prevDate, zones) => {
+      const targetZones = zones && zones.length ? zones : [...new Set((weatherTrend || [])
+        .filter((w) => w.date === date)
+        .map((w) => w.zone)
+        .filter(Boolean))];
+      const values = targetZones
+        .map((zone) => tempDiffForZone(date, prevDate, zone))
+        .filter((v) => v !== null && !Number.isNaN(v));
+      if (!values.length) return null;
+      return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10;
+    };
+    const productTempType = (row) => {
+      const text = `${row.bumonName || ''} ${row.categoryName || ''} ${row.subcategoryName || ''}`;
+      if (/タイツ|レギンス|パンスト|発熱|裏起毛|あったか|防寒|保温/.test(text)) return 'cool';
+      if (/冷感|UV|さらさら|吸水速乾|メッシュ|通気|浅履き|フットカバー|カバー|ココピタ|AIRITY|ONFEEL|サンダル|スポーツ|ソックス/.test(text)) return 'hot';
+      return 'neutral';
+    };
+    const buildTempContribution = (row, date, prevDate) => {
+      const zones = [...new Set([...(row.goodZones || []), ...(row.badZones || [])].map((z) => z.zone).filter(Boolean))];
+      const lastWeekDate = shiftDateString(date, -7);
+      let compareDate = lastWeekDate;
+      let compareLabel = '前週同曜日差';
+      let nationalDiff = avgTempDiff(date, compareDate, null);
+      let moveZoneDiff = avgTempDiff(date, compareDate, zones);
+      if (nationalDiff === null && moveZoneDiff === null && prevDate) {
+        compareDate = prevDate;
+        compareLabel = '前回差';
+        nationalDiff = avgTempDiff(date, compareDate, null);
+        moveZoneDiff = avgTempDiff(date, compareDate, zones);
+      }
+      const tempDiff = moveZoneDiff !== null ? moveZoneDiff : nationalDiff;
+      if (tempDiff === null || !compareDate) {
+        return {
+          label: '気温データ不足',
+          detail: '前週同曜日の気温差を判定できません',
+          className: ''
+        };
+      }
+
+      const salesUp = Number(row.dayDiff || 0) > 0;
+      const salesDown = Number(row.dayDiff || 0) < 0;
+      const tempUp = tempDiff >= 1;
+      const tempDown = tempDiff <= -1;
+      const type = productTempType(row);
+      const tempText = `${moveZoneDiff !== null ? '主要ゾーン' : '全国平均'}気温 ${compareLabel} ${tempDiff > 0 ? '+' : ''}${tempDiff.toFixed(1)}℃`;
+      const hasYoy = row.yoy !== null && !Number.isNaN(Number(row.yoy));
+      const hasProfitYoy = row.profitYoy !== null && !Number.isNaN(Number(row.profitYoy));
+      const yoyGood = hasYoy && Number(row.yoy) >= 100;
+      const profitYoyGood = hasProfitYoy && Number(row.profitYoy) >= 100;
+      const yoyWeak = hasYoy && Number(row.yoy) < 95;
+      const profitYoyWeak = hasProfitYoy && Number(row.profitYoy) < 95;
+      const yearGood = (yoyGood || profitYoyGood) && !yoyWeak && !profitYoyWeak;
+      const yearWeak = (yoyWeak || profitYoyWeak) && !yoyGood && !profitYoyGood;
+      const yearMixed = (yoyGood || profitYoyGood) && (yoyWeak || profitYoyWeak);
+      const axisText = () => `${tempText} / 前週同曜日比 ${pctText(row.dayPct, true)} / 前年比 ${pctText(row.yoy)} / 荒利前年比 ${pctText(row.profitYoy)}`;
+      const mixedYearDetail = (suffix) => `${axisText()} → ${suffix}`;
+      const twoAxisWeekDown = (fallbackLabel, fallbackDetail, fallbackClass) => {
+        if (!salesDown) return null;
+        if (yearGood) {
+          return {
+            label: '前週落ち・前年差は維持',
+            detail: mixedYearDetail('前週反動の可能性。前年水準は維持しているため、在庫・販促・前年水準で確認'),
+            className: 'num-warn'
+          };
+        }
+        if (yearMixed) {
+          return {
+            label: '前週落ち・前年差は混在',
+            detail: mixedYearDetail('売上前年差と荒利前年差の方向が分かれるため、単純な不振判定は保留'),
+            className: 'num-warn'
+          };
+        }
+        if (yearWeak) {
+          return {
+            label: fallbackLabel,
+            detail: mixedYearDetail(fallbackDetail),
+            className: fallbackClass
+          };
+        }
+        return {
+          label: '前週落ち',
+          detail: mixedYearDetail('前年比データ不足。前週同曜日差だけで見ず、前年水準も確認'),
+          className: 'num-warn'
+        };
+      };
+      const twoAxisWeekUp = (fallbackLabel, fallbackDetail, fallbackClass) => {
+        if (!salesUp) return null;
+        if (yearWeak) {
+          return {
+            label: '前週回復・前年差不足',
+            detail: mixedYearDetail('前週より戻しているが前年水準には不足。前年同週の売場・在庫差を確認'),
+            className: 'num-warn'
+          };
+        }
+        if (yearMixed) {
+          return {
+            label: '前週伸長・前年差は混在',
+            detail: mixedYearDetail('売上と荒利の方向が分かれるため、粗利率と値引き影響を確認'),
+            className: 'num-warn'
+          };
+        }
+        return {
+          label: fallbackLabel,
+          detail: mixedYearDetail(fallbackDetail),
+          className: fallbackClass
+        };
+      };
+
+      if (!salesUp && !salesDown) {
+        return { label: '売上差なし', detail: axisText(), className: '' };
+      }
+      if (!tempUp && !tempDown) {
+        return { label: '気温影響薄い', detail: `${axisText()} → 気温以外の要因も確認`, className: 'num-warn' };
+      }
+      if (type === 'hot') {
+        if (salesUp && tempUp) return twoAxisWeekUp('気温上昇寄与の可能性', '春夏・軽量需要と同方向', 'num-good');
+        if (salesDown && tempDown) return twoAxisWeekDown('気温低下が逆風の可能性', '春夏寄り商品には逆風。前年差も弱いため重点確認', 'num-bad');
+        if (salesUp && tempDown) return twoAxisWeekUp('気温逆行で伸長', '気温以外の価格・販促・在庫要因も確認', 'num-warn');
+        if (salesDown && tempUp) return twoAxisWeekDown('気温上昇でも前年差弱い', '気温は追い風だが、前週・前年差とも弱いため売場・在庫・価格要因を確認', 'num-bad');
+      }
+      if (type === 'cool') {
+        if (salesUp && tempDown) return twoAxisWeekUp('低温寄与の可能性', 'レギンス・タイツ系と同方向', 'num-good');
+        if (salesDown && tempUp) return twoAxisWeekDown('気温上昇が逆風の可能性', '厚手・長丈系には逆風。前年差も弱いため重点確認', 'num-bad');
+        if (salesUp && tempUp) return twoAxisWeekUp('気温逆行で伸長', '気温以外の価格・販促・在庫要因も確認', 'num-warn');
+        if (salesDown && tempDown) return twoAxisWeekDown('低温でも前年差弱い', '低温は追い風だが、前週・前年差とも弱いため売場・在庫・価格要因を確認', 'num-bad');
+      }
+      return {
+        label: tempUp ? '気温上昇週' : '気温低下週',
+        detail: `${axisText()} → 商品特性との直接連動は弱め`,
+        className: 'num-warn'
+      };
+    };
+
+    const rebuildCategoryOptions = () => {
+      const prev = categorySelect.value || '';
+      activeRows = viewMode === 'weekly' ? buildWeeklyRows() : allRows;
+      const source = activeRows.filter((r) => r.date === activeDateKey() && !isAggRow(r));
+      const map = {};
+      source.forEach((r) => {
+        if (selectedBumon() && bumonCode(r) !== selectedBumon()) return;
+        map[categoryKey(r)] = r['カテゴリ名'] || '未設定';
+      });
+      const options = ['<option value="">全カテゴリ</option>']
+        .concat(Object.keys(map).sort((a, b) => map[a].localeCompare(map[b], 'ja')).map((key) =>
+          `<option value="${escapeAttribute(key)}">${escapeHtml(map[key])}</option>`
+        ));
+      categorySelect.innerHTML = options.join('');
+      if (Object.prototype.hasOwnProperty.call(map, prev)) categorySelect.value = prev;
+    };
+
+    const aggregateProducts = (sourceRows) => {
+      const map = {};
+      sourceRows.filter(matchesFilters).forEach((r) => {
+        const key = productKey(r);
+        if (!map[key]) {
+          map[key] = {
+            key,
+            bumonCode: bumonCode(r),
+            bumonName: r['部門名'] || '',
+            categoryCode: r['カテゴリCD'] || '',
+            categoryName: r['カテゴリ名'] || '',
+            subcategoryCode: r['サブカテCD'] || '',
+            subcategoryName: r['サブカテ名'] || '',
+            qty: 0,
+            amount: 0,
+            profit: 0,
+            lyQty: 0,
+            lyAmount: 0,
+            lyProfit: 0,
+            hasLy: false,
+            hasProfit: false,
+            hasLyProfit: false
+          };
+        }
+        map[key].qty += Number(r['実績数量'] || 0);
+        map[key].amount += Number(r['実績金額'] || 0);
+        const profit = grossProfitFromRow(r, '実績金額');
+        const lyProfit = lastYearGrossProfitFromRow(r);
+        if (!Number.isNaN(profit)) {
+          map[key].profit += profit;
+          map[key].hasProfit = true;
+        }
+        if (!Number.isNaN(lyProfit)) {
+          map[key].lyProfit += lyProfit;
+          map[key].hasLyProfit = true;
+        }
+        if (r['前年同週同曜日実績'] !== '' && r['前年同週同曜日実績'] !== null && typeof r['前年同週同曜日実績'] !== 'undefined') {
+          map[key].lyAmount += Number(r['前年同週同曜日実績'] || 0);
+          map[key].lyQty += Number(r['前年同週同曜日数量'] || 0);
+          map[key].hasLy = true;
+        }
+      });
+      return map;
+    };
+
+    const rowsForNational = (date) => {
+      const aggregate = activeRows.filter((r) => r.date === date && isAggRow(r));
+      return aggregate.length ? aggregate : activeRows.filter((r) => r.date === date && !isAggRow(r));
+    };
+
+    const aggregateByProductZone = (date) => {
+      const map = {};
+      activeRows.filter((r) => r.date === date && !isAggRow(r) && matchesFilters(r)).forEach((r) => {
+        const key = productKey(r);
+        const zone = r.zone_name || '未設定';
+        if (!map[key]) map[key] = {};
+        if (!map[key][zone]) map[key][zone] = { zone, amount: 0, qty: 0, profit: 0, lyAmount: 0, lyProfit: 0, hasLy: false, hasProfit: false, hasLyProfit: false };
+        map[key][zone].amount += Number(r['実績金額'] || 0);
+        map[key][zone].qty += Number(r['実績数量'] || 0);
+        const profit = grossProfitFromRow(r, '実績金額');
+        const lyProfit = lastYearGrossProfitFromRow(r);
+        if (!Number.isNaN(profit)) {
+          map[key][zone].profit += profit;
+          map[key][zone].hasProfit = true;
+        }
+        if (!Number.isNaN(lyProfit)) {
+          map[key][zone].lyProfit += lyProfit;
+          map[key][zone].hasLyProfit = true;
+        }
+        if (r['前年同週同曜日実績'] !== '' && r['前年同週同曜日実績'] !== null && typeof r['前年同週同曜日実績'] !== 'undefined') {
+          map[key][zone].lyAmount += Number(r['前年同週同曜日実績'] || 0);
+          map[key][zone].hasLy = true;
+        }
+      });
+      return map;
+    };
+
+    const buildRows = () => {
+      const date = activeDateKey();
+      const comparison = comparisonForActivePeriod();
+      const prevDate = comparison.date;
+      const todayMap = aggregateProducts(rowsForNational(date));
+      const prevMap = prevDate ? aggregateProducts(rowsForNational(prevDate)) : {};
+      const zonesToday = aggregateByProductZone(date);
+      const zonesPrev = prevDate ? aggregateByProductZone(prevDate) : {};
+
+      return Object.values(todayMap).map((item) => {
+        const prev = prevMap[item.key] || {};
+        const prevAmount = Number(prev.amount || 0);
+        const dayDiff = Number(item.amount || 0) - prevAmount;
+        const dayPct = prevAmount ? dayDiff / prevAmount * 100 : null;
+        const yoy = item.hasLy && item.lyAmount ? item.amount / item.lyAmount * 100 : null;
+        const grossRate = item.hasProfit ? grossMarginRate(item.profit, item.amount) : NaN;
+        const profitYoy = item.hasLyProfit && item.lyProfit ? item.profit / item.lyProfit * 100 : null;
+        const zones = {};
+        Object.values(zonesToday[item.key] || {}).forEach((z) => {
+          zones[z.zone] = {
+            zone: z.zone,
+            today: z.amount,
+            prev: 0,
+            profit: Number(z.profit || 0),
+            lyAmount: Number(z.lyAmount || 0),
+            lyProfit: Number(z.lyProfit || 0),
+            hasLy: Boolean(z.hasLy),
+            hasProfit: Boolean(z.hasProfit),
+            hasLyProfit: Boolean(z.hasLyProfit)
+          };
+        });
+        Object.values(zonesPrev[item.key] || {}).forEach((z) => {
+          if (!zones[z.zone]) zones[z.zone] = { zone: z.zone, today: 0, prev: 0, profit: 0, lyAmount: 0, lyProfit: 0, hasLy: false, hasProfit: false, hasLyProfit: false };
+          zones[z.zone].prev += z.amount;
+        });
+        Object.values(zonesToday[item.key] || {}).forEach((z) => {
+          if (zones[z.zone]) {
+            zones[z.zone].today = z.amount;
+            zones[z.zone].profit = Number(z.profit || 0);
+            zones[z.zone].lyAmount = Number(z.lyAmount || 0);
+            zones[z.zone].lyProfit = Number(z.lyProfit || 0);
+            zones[z.zone].hasLy = Boolean(z.hasLy);
+            zones[z.zone].hasProfit = Boolean(z.hasProfit);
+            zones[z.zone].hasLyProfit = Boolean(z.hasLyProfit);
+          }
+        });
+        const zoneMoves = Object.values(zones).map((z) => {
+          const diff = Number(z.today || 0) - Number(z.prev || 0);
+          const pct = z.prev ? diff / z.prev * 100 : null;
+          const yoy = z.hasLy && z.lyAmount ? z.today / z.lyAmount * 100 : null;
+          const grossRate = z.hasProfit ? grossMarginRate(z.profit, z.today) : NaN;
+          const profitYoy = z.hasLyProfit && z.lyProfit ? z.profit / z.lyProfit * 100 : null;
+          return { ...z, diff, pct, yoy, grossRate, profitYoy, impactAmount: Math.abs(diff) };
+        }).filter((z) => z.impactAmount > 0);
+        return {
+          ...item,
+          prevAmount,
+          prevDate: comparison.displayDate || prevDate,
+          targetDate: activeDisplayDate(),
+          weatherDate: comparison.weatherDate || date,
+          weatherPrevDate: comparison.weatherPrevDate || prevDate,
+          compareLabel: comparison.label,
+          compareRateLabel: comparison.rateLabel,
+          compareDiffLabel: comparison.diffLabel,
+          dayDiff,
+          dayPct,
+          yoy,
+          grossRate,
+          profitYoy,
+          impactAmount: Math.abs(dayDiff),
+          goodZones: zoneMoves.filter((z) => z.diff > 0).sort((a, b) => b.impactAmount - a.impactAmount).slice(0, 3),
+          badZones: zoneMoves.filter((z) => z.diff < 0).sort((a, b) => b.impactAmount - a.impactAmount).slice(0, 3)
+        };
+      }).filter((row) => row.amount || row.prevAmount);
+    };
+
+    const pctText = (value, signed = false) => {
+      if (value === null || Number.isNaN(Number(value))) return '-';
+      const n = Number(value);
+      const sign = signed && n > 0 ? '+' : '';
+      return `${sign}${n.toFixed(1)}%`;
+    };
+    const pctClass = (value, goodAtHundred = true) => {
+      if (value === null || Number.isNaN(Number(value))) return '';
+      const n = Number(value);
+      return goodAtHundred
+        ? n >= 100 ? 'num-good' : n >= 95 ? 'num-warn' : 'num-bad'
+        : n >= 0 ? 'num-good' : 'num-bad';
+    };
+    const rankList = (items) => {
+      if (!items.length) return '<div class="sales-main-empty">該当なし</div>';
+      return `<ol class="product-zone-list">${items.map((z) => `
+        <li>
+          <span>${escapeHtml(z.zone)}</span>
+          <strong class="${z.diff >= 0 ? 'num-good' : 'num-bad'}">${escapeHtml(formatSignedYen(z.diff))}</strong>
+          <span>${escapeHtml(pctText(z.pct, true))}</span>
+          <span class="product-zone-yoy ${pctClass(z.yoy)}">前年比 ${escapeHtml(pctText(z.yoy))}</span>
+          <span class="product-zone-yoy ${pctClass(z.profitYoy)}">荒利前年比 ${escapeHtml(pctText(z.profitYoy))}</span>
+        </li>
+      `).join('')}</ol>`;
+    };
+
+    const renderView = () => {
+      activeRows = viewMode === 'weekly' ? buildWeeklyRows() : allRows;
+      const rows = buildRows().map((row) => ({
+        ...row,
+        tempContribution: buildTempContribution(row, row.weatherDate || dateSelect.value, row.weatherPrevDate || row.prevDate)
+      }));
+      const sortMode = sortSelect.value || 'impact';
+      const sorted = [...rows].sort((a, b) => {
+        if (sortMode === 'up') return b.dayDiff - a.dayDiff;
+        if (sortMode === 'down') return a.dayDiff - b.dayDiff;
+        if (sortMode === 'amount') return b.amount - a.amount;
+        return b.impactAmount - a.impactAmount;
+      });
+      countBadge.textContent = `${rows.length}件`;
+      const currentComparison = rows[0] || comparisonForActivePeriod();
+      const compareLabel = currentComparison.compareLabel || currentComparison.label || '比較';
+      const compareDiffLabel = currentComparison.compareDiffLabel || currentComparison.diffLabel || '比較差';
+      const compareRateLabel = currentComparison.compareRateLabel || currentComparison.rateLabel || '比較比';
+      const productTableHeaders = document.querySelectorAll('#productAnalysisTable thead th');
+      if (productTableHeaders.length >= 7) {
+        productTableHeaders[4].textContent = compareLabel;
+        productTableHeaders[5].textContent = compareDiffLabel;
+        productTableHeaders[6].textContent = compareRateLabel;
+      }
+
+      const total = rows.reduce((acc, row) => {
+        acc.amount += row.amount;
+        acc.prev += row.prevAmount;
+        if (row.hasProfit) {
+          acc.profit += row.profit;
+          acc.hasProfit = true;
+        }
+        if (row.hasLy) {
+          acc.ly += row.lyAmount;
+          acc.hasLy = true;
+        }
+        if (row.hasLyProfit) {
+          acc.lyProfit += row.lyProfit;
+          acc.hasLyProfit = true;
+        }
+        return acc;
+      }, { amount: 0, prev: 0, profit: 0, ly: 0, lyProfit: 0, hasLy: false, hasProfit: false, hasLyProfit: false });
+      const totalDiff = total.amount - total.prev;
+      const totalDayPct = total.prev ? totalDiff / total.prev * 100 : null;
+      const totalYoy = total.hasLy && total.ly ? total.amount / total.ly * 100 : null;
+      const totalGrossRate = total.hasProfit ? grossMarginRate(total.profit, total.amount) : NaN;
+      const totalProfitYoy = total.hasLyProfit && total.lyProfit ? total.profit / total.lyProfit * 100 : null;
+      const best = [...rows].filter((r) => r.dayDiff > 0).sort((a, b) => b.impactAmount - a.impactAmount)[0];
+      const worst = [...rows].filter((r) => r.dayDiff < 0).sort((a, b) => b.impactAmount - a.impactAmount)[0];
+      const bigYoyGap = [...rows].filter((r) => r.yoy !== null).sort((a, b) => Math.abs(100 - b.yoy) - Math.abs(100 - a.yoy))[0];
+      const tempCandidate = [...rows]
+        .filter((r) => r.tempContribution && r.tempContribution.label !== '気温データ不足' && r.tempContribution.label !== '気温影響薄い')
+        .sort((a, b) => b.impactAmount - a.impactAmount)[0];
+
+      const summaryCard = (label, value, detail, className = '') => `
+        <article class="product-summary-card">
+          <div class="product-summary-label">${escapeHtml(label)}</div>
+          <div class="product-summary-value ${className}">${value}</div>
+          <div class="product-summary-detail">${detail}</div>
+        </article>`;
+      const summaryValue = (row, rateValue, rateClass = '') => row
+        ? `${escapeHtml(row.subcategoryName)} <span class="${rateClass}">${escapeHtml(rateValue)}</span>`
+        : '-';
+      const productSummaryDetail = (row, extraHtml = '') => {
+        if (!row) return '該当なし';
+        const compareDate = row.prevDate ? `（${escapeHtml(row.prevDate)}）` : '';
+        return [
+          `${escapeHtml(row.bumonName)} / ${escapeHtml(row.categoryName)}`,
+          `実績 ${formatYen(row.amount)} / ${escapeHtml(compareDiffLabel)}${compareDate} <span class="${pctClass(row.dayDiff, false)}">${formatSignedYen(row.dayDiff)}</span> / ${escapeHtml(compareRateLabel)} <span class="${pctClass(row.dayPct, false)}">${pctText(row.dayPct, true)}</span>`,
+          `前年同週同曜日 ${row.hasLy ? formatYen(row.lyAmount) : '-'} / 前年比 <span class="${pctClass(row.yoy)}">${pctText(row.yoy)}</span>`,
+          `荒利 ${row.hasProfit ? formatYen(row.profit) : '-'} / 粗利率 ${formatPct(row.grossRate)} / 荒利前年比 <span class="${pctClass(row.profitYoy)}">${pctText(row.profitYoy)}</span>`,
+          extraHtml
+        ].filter(Boolean).join('<br>');
+      };
+      summary.innerHTML = [
+        summaryCard('全体', `${formatYen(total.amount)}`, `${escapeHtml(compareDiffLabel)} <span class="${pctClass(totalDiff, false)}">${formatSignedYen(totalDiff)}</span> / ${escapeHtml(compareRateLabel)} ${pctText(totalDayPct, true)} / 前年比 ${pctText(totalYoy)}<br>荒利 ${total.hasProfit ? formatYen(total.profit) : '-'} / 粗利率 ${formatPct(totalGrossRate)} / 荒利前年比 <span class="${pctClass(totalProfitYoy)}">${pctText(totalProfitYoy)}</span>`),
+        summaryCard('伸び上位', summaryValue(best, pctText(best && best.dayPct, true), 'num-good'), productSummaryDetail(best), 'num-good'),
+        summaryCard('落ち込み上位', summaryValue(worst, pctText(worst && worst.dayPct, true), 'num-bad'), productSummaryDetail(worst), 'num-bad'),
+        summaryCard('前年差注意', summaryValue(bigYoyGap, pctText(bigYoyGap && bigYoyGap.yoy), bigYoyGap ? pctClass(bigYoyGap.yoy) : ''), productSummaryDetail(bigYoyGap)),
+        summaryCard('気温寄与候補', tempCandidate ? escapeHtml(tempCandidate.subcategoryName) : '-', tempCandidate ? productSummaryDetail(tempCandidate, `<span class="product-summary-reason ${escapeAttribute(tempCandidate.tempContribution.className || '')}">${escapeHtml(tempCandidate.tempContribution.label)}：${escapeHtml(tempCandidate.tempContribution.detail)}</span>`) : '該当なし')
+      ].join('');
+
+      const topCards = sorted.slice(0, 12);
+      cards.innerHTML = topCards.length ? topCards.map((row) => `
+        <article class="card product-card">
+          <div class="meta">
+            <span>${escapeHtml(row.targetDate || activeDisplayDate())}</span>
+            <span>${escapeHtml(row.bumonName)}</span>
+            <span>${escapeHtml(row.categoryName)}</span>
+          </div>
+          <div class="product-card-title">${escapeHtml(row.subcategoryName)}</div>
+          <div class="product-kpi-grid">
+            <div><span>実績</span><strong>${formatYen(row.amount)}</strong></div>
+            <div><span>${escapeHtml(row.compareDiffLabel || '比較差')}</span><strong class="${pctClass(row.dayDiff, false)}">${formatSignedYen(row.dayDiff)}</strong></div>
+            <div><span>${escapeHtml(row.compareRateLabel || '比較比')}</span><strong class="${pctClass(row.dayPct, false)}">${pctText(row.dayPct, true)}</strong></div>
+            <div><span>前年比</span><strong class="${pctClass(row.yoy)}">${pctText(row.yoy)}</strong></div>
+            <div><span>荒利</span><strong>${row.hasProfit ? formatYen(row.profit) : '-'}</strong></div>
+            <div><span>粗利率</span><strong>${formatPct(row.grossRate)}</strong></div>
+            <div><span>荒利前年比</span><strong class="${pctClass(row.profitYoy)}">${pctText(row.profitYoy)}</strong></div>
+          </div>
+          <div class="product-temp-note">
+            <strong class="${escapeAttribute(row.tempContribution.className || '')}">${escapeHtml(row.tempContribution.label)}</strong>
+            <span>${escapeHtml(row.tempContribution.detail)}</span>
+          </div>
+          <div class="product-zone-split">
+            <div>
+              <div class="sales-zone-subcat-title num-good">伸びゾーン 上位3</div>
+              ${rankList(row.goodZones)}
+            </div>
+            <div>
+              <div class="sales-zone-subcat-title num-bad">落ちゾーン 上位3</div>
+              ${rankList(row.badZones)}
+            </div>
+          </div>
+        </article>
+      `).join('') : '<div class="empty">条件に合う商品実績はありません。</div>';
+
+      tbody.innerHTML = sorted.slice(0, 80).map((row) => `
+        <tr>
+          <td>${escapeHtml(row.bumonName)}</td>
+          <td>${escapeHtml(row.categoryName)}</td>
+          <td>${escapeHtml(row.subcategoryName)}</td>
+          <td class="num">${formatYen(row.amount)}</td>
+          <td class="num">${row.prevDate ? formatYen(row.prevAmount) : '-'}</td>
+          <td class="num ${pctClass(row.dayDiff, false)}">${formatSignedYen(row.dayDiff)}</td>
+          <td class="num ${pctClass(row.dayPct, false)}">${pctText(row.dayPct, true)}</td>
+          <td class="num">${row.hasLy ? formatYen(row.lyAmount) : '-'}</td>
+          <td class="num ${pctClass(row.yoy)}">${pctText(row.yoy)}</td>
+          <td class="num">${row.hasProfit ? formatYen(row.profit) : '-'}</td>
+          <td class="num">${formatPct(row.grossRate)}</td>
+          <td class="num">${row.hasLyProfit ? formatYen(row.lyProfit) : '-'}</td>
+          <td class="num ${pctClass(row.profitYoy)}">${pctText(row.profitYoy)}</td>
+          <td><strong class="${escapeAttribute(row.tempContribution.className || '')}">${escapeHtml(row.tempContribution.label)}</strong><br><span class="sales-main-amount">${escapeHtml(row.tempContribution.detail)}</span></td>
+          <td>${escapeHtml(row.goodZones.map((z) => `${z.zone} ${formatSignedYen(z.diff)}`).join(' / ') || '-')}</td>
+          <td>${escapeHtml(row.badZones.map((z) => `${z.zone} ${formatSignedYen(z.diff)}`).join(' / ') || '-')}</td>
+        </tr>
+      `).join('');
+    };
+
+    const renderWeekTabs = () => {
+      if (!weekTabs) return;
+      weekTabs.classList.toggle('is-visible', viewMode === 'weekly' && weekWindows.length > 0);
+      weekTabs.innerHTML = weekWindows.map((week) => `
+        <button type="button" class="week-tab ${week.key === selectedWeekKey ? 'is-active' : ''}" data-week="${escapeAttribute(week.key)}">
+          ${escapeHtml(week.label)}
+        </button>
+      `).join('');
+      weekTabs.querySelectorAll('.week-tab').forEach((button) => {
+        button.onclick = () => {
+          selectedWeekKey = button.dataset.week || selectedWeekKey;
+          activeRows = buildWeeklyRows();
+          renderWeekTabs();
+          rebuildCategoryOptions();
+          renderView();
+        };
+      });
+    };
+
+    const setViewMode = (mode) => {
+      viewMode = mode === 'weekly' && weekWindows.length ? 'weekly' : 'daily';
+      if (dateSelect) dateSelect.disabled = viewMode === 'weekly';
+      if (periodMode) {
+        periodMode.querySelectorAll('.segment').forEach((button) => {
+          button.classList.toggle('is-active', button.dataset.mode === viewMode);
+        });
+      }
+      activeRows = viewMode === 'weekly' ? buildWeeklyRows() : allRows;
+      renderWeekTabs();
+      rebuildCategoryOptions();
+      renderView();
+    };
+
+    if (periodMode) {
+      periodMode.querySelectorAll('.segment').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.mode === viewMode);
+        button.onclick = () => setViewMode(button.dataset.mode || 'daily');
+      });
+    }
+    renderWeekTabs();
+    rebuildCategoryOptions();
+    renderView();
+
+    if (viewMode === 'weekly') dateSelect.disabled = true;
+    dateSelect.onchange = () => { if (viewMode === 'daily') { rebuildCategoryOptions(); renderView(); } };
+    bumonSelect.onchange = () => { rebuildCategoryOptions(); renderView(); };
+    categorySelect.onchange = renderView;
+    sortSelect.onchange = renderView;
+  }
+
+  function renderNews(items, allItems = items, weeks = []) {
+    const container = document.getElementById('newsList');
+    const period = state.periods.news;
+    const week = currentPeriodWeek('news', weeks);
+    bindPeriodControls('news', weeks, () => renderNews(items, allItems, weeks));
+    const displayItems = period.mode === 'weekly' && week
+      ? (allItems || []).filter((item) => rowInDateRange(item, week.startDate, week.endDate))
+      : items;
+    if (!displayItems.length) {
+      container.innerHTML = '<div class="empty">ニュースデータはまだありません。</div>';
+      return;
+    }
+    container.innerHTML = sortByImportance(displayItems).map((item) => `
+      <article class="list-item">
+        <div class="meta">
+          <span>${escapeHtml(item.date)}</span>
+          <span>${escapeHtml(item.keyword)}</span>
+          <span>${escapeHtml(item.source)}</span>
+          <span class="importance">重要度 ${escapeHtml(item.importance)}</span>
+        </div>
+        <a href="${escapeAttribute(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>
+        <p>${escapeHtml(item.summary)}</p>
+        <div class="action">MD示唆：${escapeHtml(item.md_insight)}</div>
+      </article>
+    `).join('');
+  }
+
+  function renderReviewNews(items) {
+    const container = document.getElementById('reviewList');
+    if (!items.length) {
+      container.innerHTML = '<div class="empty">保留ニュースはありません。</div>';
+      return;
+    }
+    container.innerHTML = items.map((item) => `
+      <article class="list-item">
+        <div class="meta">
+          <span>${escapeHtml(item.date)}</span>
+          <span>${escapeHtml(item.keyword)}</span>
+          <span>${escapeHtml(item.source)}</span>
+          <span>${escapeHtml(item.review_status || '保留')}</span>
+        </div>
+        <a href="${escapeAttribute(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>
+        <p>${escapeHtml(item.summary)}</p>
+        <div class="action">保留理由：${escapeHtml(item.review_reason || '確認待ち')}</div>
+      </article>
+    `).join('');
+  }
+
+  function renderTags(items) {
+    const tbody = document.getElementById('tagTable');
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="9">今日、分析タグとして残すほどの外部要因はありません。</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.date)}</td>
+        <td>${escapeHtml(item.week)}</td>
+        <td>${escapeHtml(item.zone)}</td>
+        <td>${escapeHtml(item.category)}</td>
+        <td>${escapeHtml(item.temp_tag)}</td>
+        <td>${escapeHtml(item.weather_tag)}</td>
+        <td>${escapeHtml(item.market_tag)}</td>
+        <td>${escapeHtml(item.product_tag)}</td>
+        <td>${escapeHtml(item.action_hint)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderCards(elementId, items, template) {
+    const container = document.getElementById(elementId);
+    if (!items.length) {
+      container.innerHTML = '<div class="empty">表示できるデータはまだありません。</div>';
+      return;
+    }
+    container.innerHTML = items.map(template).join('');
+  }
+
+  function sortByImportance(items) {
+    return [...items].sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0));
+  }
+
+  function setLoading(isLoading, message) {
+    state.loading = isLoading;
+    const status = document.getElementById('status');
+    status.hidden = !isLoading;
+    status.textContent = message || '';
+    document.getElementById('reloadButton').disabled = isLoading;
+  }
+
+  function showError(error) {
+    const box = document.getElementById('error');
+    box.hidden = false;
+    box.textContent = error && error.message ? error.message : String(error);
+  }
+
+  function hideError() {
+    document.getElementById('error').hidden = true;
+  }
+
+  function formatSigned(value) {
+    if (value === '' || value === null || typeof value === 'undefined') return '±0';
+    const number = Number(value);
+    if (Number.isNaN(number)) return escapeHtml(value);
+    return number > 0 ? `+${number}` : `${number}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function escapeAttribute(value) {
+    const text = String(value || '#');
+    if (text.startsWith('dummy://')) return '#';
+    return escapeHtml(text);
+  }
+</script>
