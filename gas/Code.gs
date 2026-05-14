@@ -1,4 +1,4 @@
-﻿const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || 'PASTE_SPREADSHEET_ID_HERE';
+const SPREADSHEET_ID = '1jl6gP1BRGPyeI08FHPw2XWQW4zRXubjixK51VTr5yD0';
 const SPREADSHEET_NAME = 'MD外部環境レーダー';
 const TIME_ZONE = 'Asia/Tokyo';
 const DASHBOARD_LIMIT = 50;
@@ -164,7 +164,9 @@ function updateDailyData() {
   generateProductAlerts();
   generateAnalysisTags();
   sortDataSheets();
-  return getDashboardData();
+  const dashData = getDashboardData();
+  exportToGithub_(dashData);
+  return dashData;
 }
 
 function fetchWeatherDaily() {
@@ -804,33 +806,20 @@ function getDashboardData() {
   const bumonRows = bumonSheet ? readObjects_(bumonSheet) : [];
   const categoryRows = categorySheet ? readObjects_(categorySheet) : [];
   const legwearPayload = buildLegwearDashboardPayload_(bumonRows, categoryRows, today);
-  const dashboardStartDate = legwearPayload.weeks.length
-    ? legwearPayload.weeks[legwearPayload.weeks.length - 1].startDate
-    : today;
-  const dashboardEndDate = legwearPayload.weeks.length ? legwearPayload.weeks[0].endDate : today;
-  const inDashboardRange = function(row) {
-    const date = String(row.date || '');
-    return date && date >= dashboardStartDate && date <= dashboardEndDate;
-  };
 
   return {
     updatedAt: getNow_(),
     todayAlerts: todayAlerts,
-    dashboardWeeks: legwearPayload.weeks,
     zoneOrder: zoneOrder,
     weatherLatest: weatherLatest,
-    weatherDaily: sortRowsByZoneOrder_(weatherRows.filter(inDashboardRange), zoneOrder),
     weatherTrend: buildWeatherTrend_(weatherRows, today),
     newsLatest: newsLatest,
-    newsDaily: newsRows.filter(inDashboardRange).reverse(),
     newsReview: newsReview,
     productAlerts: productAlerts,
-    productAlertsDaily: productRows.filter(inDashboardRange),
     analysisTags: analysisTags,
     legwearBumon: legwearPayload.bumonRows,
     legwearCategory: legwearPayload.categoryRows,
-    legwearDates: legwearPayload.currentWeekDates,
-    legwearAllDates: legwearPayload.allDates,
+    legwearDates: legwearPayload.allDates,
     legwearCurrentWeekDates: legwearPayload.currentWeekDates,
     legwearWeeks: legwearPayload.weeks
   };
@@ -882,16 +871,12 @@ function buildLegwearWeekWindows_(referenceDate, count) {
     const startDate = addDaysToDateString_(currentWeekStart, -7 * i);
     const nominalEndDate = addDaysToDateString_(startDate, 6);
     const endDate = i === 0 ? referenceDate : nominalEndDate;
-    const weekNo = getWeekNumber_(parseDateString_(startDate));
-    const compareWeekNo = getWeekNumber_(parseDateString_(addDaysToDateString_(startDate, -7)));
     windows.push({
       key: startDate + '_' + endDate,
-      label: formatWeekLabel_(startDate, endDate, i === 0, weekNo),
-      weekNo: weekNo,
+      label: formatWeekLabel_(startDate, endDate, i === 0),
       startDate: startDate,
       endDate: endDate,
       compareKey: addDaysToDateString_(startDate, -7) + '_' + addDaysToDateString_(endDate, -7),
-      compareWeekNo: compareWeekNo,
       compareStartDate: addDaysToDateString_(startDate, -7),
       compareEndDate: addDaysToDateString_(endDate, -7),
       isCurrent: i === 0,
@@ -917,10 +902,10 @@ function parseDateString_(dateString) {
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-function formatWeekLabel_(startDate, endDate, isCurrent, weekNo) {
+function formatWeekLabel_(startDate, endDate, isCurrent) {
   const start = parseDateString_(startDate);
   const end = parseDateString_(endDate);
-  const label = 'W' + weekNo + ' ' + (start.getMonth() + 1) + '/' + start.getDate() + '週';
+  const label = (start.getMonth() + 1) + '/' + start.getDate() + '週';
   return isCurrent && startDate !== endDate
     ? label + '（' + (end.getMonth() + 1) + '/' + end.getDate() + 'まで）'
     : label;
@@ -2009,6 +1994,99 @@ function clearDateRows_(sheet, dates) {
   return deleted;
 }
 
+// ── GitHub Export ─────────────────────────────────────────────────────────
+
+function exportToGithub_(dashboardData) {
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty('GITHUB_TOKEN');
+  const owner = props.getProperty('GITHUB_OWNER');
+  const repo  = props.getProperty('GITHUB_REPO');
+  const branch = props.getProperty('GITHUB_BRANCH') || 'main';
+
+  if (!token || !owner || !repo) {
+    Logger.log('exportToGithub_: GITHUB_TOKEN / GITHUB_OWNER / GITHUB_REPO not set — skipping');
+    return { ok: false, reason: 'github credentials not configured' };
+  }
+
+  const ss = getSpreadsheet_();
+  const sheetNames = Object.keys(SHEET_DEFINITIONS).concat(['legwear_bumon_daily', 'legwear_category_daily']);
+  const files = {};
+
+  sheetNames.forEach(function(sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    files['data/' + sheetName + '.json'] = readObjects_(sheet);
+  });
+
+  if (dashboardData) {
+    files['data/dashboard_data.json'] = dashboardData;
+  }
+
+  files['data/meta.json'] = {
+    updated_at: getNow_(),
+    today: getToday_(),
+    sheets: sheetNames
+  };
+
+  let errors = 0;
+  Object.keys(files).forEach(function(path) {
+    try {
+      pushFileToGithub_(token, owner, repo, branch, path, JSON.stringify(files[path]));
+    } catch (err) {
+      Logger.log('exportToGithub_: failed ' + path + ' / ' + err);
+      errors++;
+    }
+  });
+
+  Logger.log('exportToGithub_: done files=' + Object.keys(files).length + ' errors=' + errors);
+  return { ok: errors === 0, errors: errors, files: Object.keys(files).length };
+}
+
+function pushFileToGithub_(token, owner, repo, branch, path, content) {
+  const apiUrl = 'https://api.github.com/repos/' + owner + '/' + repo + '/contents/' + path;
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    'Accept': 'application/vnd.github.v3+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+
+  let sha = null;
+  try {
+    const getResp = UrlFetchApp.fetch(apiUrl + '?ref=' + branch, {
+      headers: headers,
+      muteHttpExceptions: true
+    });
+    if (getResp.getResponseCode() === 200) {
+      sha = JSON.parse(getResp.getContentText()).sha;
+    }
+  } catch (e) {}
+
+  const body = {
+    message: 'data: update ' + path + ' [' + getToday_() + ']',
+    content: Utilities.base64Encode(content, Utilities.Charset.UTF_8),
+    branch: branch
+  };
+  if (sha) body.sha = sha;
+
+  const putResp = UrlFetchApp.fetch(apiUrl, {
+    method: 'PUT',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+
+  const code = putResp.getResponseCode();
+  if (code !== 200 && code !== 201) {
+    throw new Error('GitHub API ' + code + ': ' + putResp.getContentText().slice(0, 300));
+  }
+}
+
+// テスト実行用（GASエディタから直接呼ぶ）
+function testExportToGithub() {
+  const result = exportToGithub_(null);
+  Logger.log(JSON.stringify(result));
+}
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -2261,4 +2339,3 @@ function buildTempRelationVerdict_(corr, up, down, flat) {
   }
   return '気温だけでは弱い';
 }
-
