@@ -535,11 +535,13 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   var prevD=comparison.date;
   if(!prevD){section.hidden=true;return;}
   var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
-  var todayBumon=bumonRows.filter(function(r){return r.date===todayD;});
-  var prevBumon=bumonRows.filter(function(r){return r.date===prevD;});
+
+  // weatherByZone（日付フィルタなし、GAS版に準拠）
   var weatherByZone={};
-  (weatherItems||[]).filter(function(w){return w.date===todayD;}).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
-  var aggByZone=function(rows){
+  (weatherItems||[]).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
+
+  // ── ゾーン別集計（bumonRows） ──
+  var sumByZoneDetail=function(rows){
     var m={};
     rows.filter(function(r){return !isAggr(r);}).forEach(function(r){
       var z=r.zone_name;if(!z)return;
@@ -549,17 +551,108 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
       var ly=Number(r['前年同週同曜日実績']||0);
       var profit=grossProfitFromRow(r,'売上実績');
       var lyProfit=lastYearGrossProfitFromRow(r);
-      if(!m[z])m[z]={total:0,budget:0,ly:0,profit:0,lyProfit:0,mens:0,mensBudget:0,mensLy:0,mensProfit:0,mensLyProfit:0,ladies:0,ladiesBudget:0,ladiesLy:0,ladiesProfit:0,ladiesLyProfit:0};
-      m[z].total+=actual;m[z].budget+=budget;m[z].ly+=ly;
-      if(!Number.isNaN(profit))m[z].profit+=profit;
-      if(!Number.isNaN(lyProfit))m[z].lyProfit+=lyProfit;
+      if(!m[z])m[z]={total:0,mens:0,ladies:0,totalBudget:0,mensBudget:0,ladiesBudget:0,totalLy:0,mensLy:0,ladiesLy:0,totalProfit:0,mensProfit:0,ladiesProfit:0,totalLyProfit:0,mensLyProfit:0,ladiesLyProfit:0};
+      m[z].total+=actual;m[z].totalBudget+=budget;m[z].totalLy+=ly;
+      if(!Number.isNaN(profit))m[z].totalProfit+=profit;
+      if(!Number.isNaN(lyProfit))m[z].totalLyProfit+=lyProfit;
       if(bcd==='0075'){m[z].mens+=actual;m[z].mensBudget+=budget;m[z].mensLy+=ly;if(!Number.isNaN(profit))m[z].mensProfit+=profit;if(!Number.isNaN(lyProfit))m[z].mensLyProfit+=lyProfit;}
       if(bcd==='0187'){m[z].ladies+=actual;m[z].ladiesBudget+=budget;m[z].ladiesLy+=ly;if(!Number.isNaN(profit))m[z].ladiesProfit+=profit;if(!Number.isNaN(lyProfit))m[z].ladiesLyProfit+=lyProfit;}
     });
     return m;
   };
-  var zTodayD=aggByZone(todayBumon);
-  var zPrevD=aggByZone(prevBumon);
+  var zTodayD=sumByZoneDetail(bumonRows.filter(function(r){return r.date===todayD;}));
+  var zPrevD=sumByZoneDetail(bumonRows.filter(function(r){return r.date===prevD;}));
+  var zToday=Object.fromEntries(Object.entries(zTodayD).map(function(e){return[e[0],e[1].total];}));
+  var zPrev=Object.fromEntries(Object.entries(zPrevD).map(function(e){return[e[0],e[1].total];}));
+
+  // ── カテゴリ別集計（categoryRows） ──
+  var sumCatByZoneBumon=function(rows){
+    var m={};
+    rows.filter(function(r){return !isAggr(r);}).forEach(function(r){
+      var zone=r.zone_name;
+      var bumon=String(r['部門CD']||'').padStart(4,'0');
+      if(!zone||!['0075','0187'].includes(bumon))return;
+      var bumonName=r['部門名']||(bumon==='0075'?'メンズレッグウェア':'レディースレッグウェア');
+      var category=r['カテゴリ名']||'未設定';
+      var subcategory=r['サブカテ名']||'未設定';
+      var key=zone+'|||'+bumon+'|||'+category+'|||'+subcategory;
+      if(!m[key])m[key]={zone:zone,bumon:bumon,bumonName:bumonName,category:category,subcategory:subcategory,today:0,prev:0,ly:0,hasLy:false,profit:0,profitLy:0,hasProfit:false,hasProfitLy:false};
+      m[key].today+=Number(r['実績金額']||0);
+      var profit=grossProfitFromRow(r,'実績金額');
+      var profitLy=lastYearGrossProfitFromRow(r);
+      if(!Number.isNaN(profit)){m[key].profit+=profit;m[key].hasProfit=true;}
+      if(!Number.isNaN(profitLy)){m[key].profitLy+=profitLy;m[key].hasProfitLy=true;}
+      if(r['前年同週同曜日実績']!==''&&r['前年同週同曜日実績']!==null&&typeof r['前年同週同曜日実績']!=='undefined'){m[key].ly+=Number(r['前年同週同曜日実績']||0);m[key].hasLy=true;}
+    });
+    return m;
+  };
+  var catTodayMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return r.date===todayD;}));
+  var catPrevMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return r.date===prevD;}));
+  Object.keys(catPrevMap).forEach(function(key){
+    if(!catTodayMap[key]){catTodayMap[key]=Object.assign({},catPrevMap[key],{today:0,ly:0,hasLy:false,profit:0,profitLy:0,hasProfit:false,hasProfitLy:false});}
+    catTodayMap[key].prev=catPrevMap[key].today||0;
+  });
+
+  // ── findMainCategory（ゾーン×部門の主力カテゴリ） ──
+  var findMainCategory=function(zone,bumon,direction){
+    var rows=Object.values(catTodayMap)
+      .filter(function(r){return (zone==='全社計'||r.zone===zone)&&r.bumon===bumon;})
+      .map(function(r){
+        var diff=Number(r.today||0)-Number(r.prev||0);
+        var pct=r.prev?diff/r.prev*100:null;
+        var grossRate=r.hasProfit?grossMarginRate(r.profit,r.today):NaN;
+        var profitYoy=r.hasProfitLy&&r.profitLy?r.profit/r.profitLy*100:null;
+        return Object.assign({},r,{diff:diff,pct:pct,grossRate:grossRate,profitYoy:profitYoy,impactAmount:Math.abs(diff)});
+      }).filter(function(r){return Math.abs(r.diff)>0;});
+    if(!rows.length)return null;
+    var directional=rows.filter(function(r){return direction==='up'?r.diff>0:r.diff<0;});
+    var candidates=directional.length?directional:rows;
+    return candidates.sort(function(a,b){return b.impactAmount-a.impactAmount;})[0];
+  };
+
+  // ── findSubcatZoneMoves（サブカテ×ゾーン分布） ──
+  var findSubcatZoneMoves=function(bumon,category,subcategory,direction,limit){
+    var grouped={};
+    Object.values(catTodayMap).filter(function(r){return r.bumon===bumon&&r.category===category&&r.subcategory===subcategory;}).forEach(function(r){
+      var key=r.zone;
+      if(!grouped[key])grouped[key]={zone:r.zone,today:0,prev:0,ly:0,hasLy:false,profit:0,profitLy:0,hasProfit:false,hasProfitLy:false};
+      grouped[key].today+=Number(r.today||0);grouped[key].prev+=Number(r.prev||0);
+      if(r.hasProfit){grouped[key].profit+=Number(r.profit||0);grouped[key].hasProfit=true;}
+      if(r.hasProfitLy){grouped[key].profitLy+=Number(r.profitLy||0);grouped[key].hasProfitLy=true;}
+      if(r.hasLy){grouped[key].ly+=Number(r.ly||0);grouped[key].hasLy=true;}
+    });
+    return Object.values(grouped).map(function(r){
+      var diff=Number(r.today||0)-Number(r.prev||0);
+      var pct=r.prev?diff/r.prev*100:null;
+      var yoy=r.hasLy&&r.ly?r.today/r.ly*100:null;
+      var grossRate=r.hasProfit?grossMarginRate(r.profit,r.today):NaN;
+      var profitYoy=r.hasProfitLy&&r.profitLy?r.profit/r.profitLy*100:null;
+      return Object.assign({},r,{diff:diff,pct:pct,yoy:yoy,grossRate:grossRate,profitYoy:profitYoy,impactAmount:Math.abs(diff)});
+    }).filter(function(r){return direction==='up'?r.diff>0:r.diff<0;}).sort(function(a,b){return b.impactAmount-a.impactAmount;}).slice(0,limit);
+  };
+
+  // ── buildSubcatChanges（サブカテゴリ別変動） ──
+  var buildSubcatChanges=function(){
+    var grouped={};
+    Object.values(catTodayMap).forEach(function(r){
+      var key=r.bumon+'|||'+(r.bumonName||r.bumon)+'|||'+r.category+'|||'+r.subcategory;
+      if(!grouped[key])grouped[key]={bumon:r.bumon,bumonName:r.bumonName,category:r.category,subcategory:r.subcategory,todayAmt:0,prevAmt:0,profitAmt:0,profitLyAmt:0,hasProfit:false,hasProfitLy:false};
+      grouped[key].todayAmt+=Number(r.today||0);grouped[key].prevAmt+=Number(r.prev||0);
+      if(r.hasProfit){grouped[key].profitAmt+=Number(r.profit||0);grouped[key].hasProfit=true;}
+      if(r.hasProfitLy){grouped[key].profitLyAmt+=Number(r.profitLy||0);grouped[key].hasProfitLy=true;}
+    });
+    return Object.values(grouped).filter(function(r){return r.prevAmt>=1000&&r.todayAmt>=100;}).map(function(r){
+      var diff=Number(r.todayAmt||0)-Number(r.prevAmt||0);
+      var pct=r.prevAmt?diff/r.prevAmt*100:null;
+      var grossRate=r.hasProfit?grossMarginRate(r.profitAmt,r.todayAmt):NaN;
+      var profitYoy=r.hasProfitLy&&r.profitLyAmt?r.profitAmt/r.profitLyAmt*100:null;
+      return Object.assign({},r,{diff:diff,pct:pct,grossRate:grossRate,profitYoy:profitYoy,impactAmount:Math.abs(diff),
+        goodZones:findSubcatZoneMoves(r.bumon,r.category,r.subcategory,'up',3),
+        badZones:findSubcatZoneMoves(r.bumon,r.category,r.subcategory,'down',3)});
+    }).filter(function(r){return Math.abs(r.diff)>0;});
+  };
+
+  // ── judgeTwoAxis ──
   var judgeTwoAxis=function(dayPct,yoy){
     if(yoy===null||Number.isNaN(yoy))return{label:dayPct>=0?comparison.rateLabel+'回復':comparison.rateLabel+'下落',className:dayPct>=0?'num-good':'num-bad'};
     if(dayPct>=0&&yoy>=100)return{label:'好調継続',className:'num-good'};
@@ -567,73 +660,153 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     if(dayPct<0&&yoy>=100)return{label:comparison.rateLabel+'反動・前年差は維持',className:'num-warn'};
     return{label:'注意',className:'num-bad'};
   };
+
   var alerts=[];
-  Object.keys(zTodayD).forEach(function(z){
-    var td=zTodayD[z],pd=zPrevD[z]||{total:0};
-    if(!pd.total||pd.total<10000||!td.total)return;
-    var pct=(td.total-pd.total)/pd.total*100;
-    if(Math.abs(pct)<10)return;
-    var yoy=td.ly?td.total/td.ly*100:null;
-    var budgetRatio=td.budget?td.total/td.budget*100:null;
-    var profitYoy=td.lyProfit?td.profit/td.lyProfit*100:null;
-    var grossRateTotal=grossMarginRate(td.profit,td.total);
-    var mensYoy=td.mensLy?td.mens/td.mensLy*100:null;
-    var mensBudgetRatio=td.mensBudget?td.mens/td.mensBudget*100:null;
-    var grossRateMens=grossMarginRate(td.mensProfit,td.mens);
-    var profitYoyMens=td.mensLyProfit?td.mensProfit/td.mensLyProfit*100:null;
-    var ladiesYoy=td.ladiesLy?td.ladies/td.ladiesLy*100:null;
-    var ladiesBudgetRatio=td.ladiesBudget?td.ladies/td.ladiesBudget*100:null;
-    var grossRateLadies=grossMarginRate(td.ladiesProfit,td.ladies);
-    var profitYoyLadies=td.ladiesLyProfit?td.ladiesProfit/td.ladiesLyProfit*100:null;
+
+  // ── ゾーンアラート ──
+  var allZoneChanges=Object.keys(zToday).filter(function(z){return (zPrev[z]||0)>=10000&&(zToday[z]||0)>0;}).map(function(z){
+    var pct=(zToday[z]-zPrev[z])/zPrev[z]*100;
+    var td=zTodayD[z]||{};var pd=zPrevD[z]||{};
+    var yoy=td.totalLy?td.total/td.totalLy*100:null;
     var w=weatherByZone[z]||{};
     var hasLW=w.temp_vs_last_week!==''&&w.temp_vs_last_week!==null&&typeof w.temp_vs_last_week!=='undefined';
     var tempDiff=Number(hasLW?w.temp_vs_last_week:(w.temp_vs_yesterday||0));
-    var tempLabel='平均気温'+(hasLW?'前週差':'前日差');
-    var isUp=pct>0;var tempNote='';
-    if(Math.abs(tempDiff)>=2){
-      if(isUp&&tempDiff>=2)tempNote=tempLabel+'+'+tempDiff.toFixed(1)+'℃ → 気温寄与の可能性';
-      else if(isUp&&tempDiff<=-2)tempNote=tempLabel+tempDiff.toFixed(1)+'℃ → 気温以外の要因で伸長';
-      else if(!isUp&&tempDiff<=-2)tempNote=tempLabel+tempDiff.toFixed(1)+'℃ → 気温寄与の可能性';
-      else if(!isUp&&tempDiff>=2)tempNote=tempLabel+'+'+tempDiff.toFixed(1)+'℃にもかかわらず下落';
+    var tempCompareLabel=hasLW?'前週差':'前日差';
+    var direction=pct>=0?'up':'down';
+    return{zone:z,today:zToday[z],prev:zPrev[z],pct:pct,tempDiff:tempDiff,tempCompareLabel:tempCompareLabel,
+      todayMens:td.mens||0,prevMens:pd.mens||0,budgetMens:td.mensBudget||0,lyMens:td.mensLy||0,profitMens:td.mensProfit||0,lyProfitMens:td.mensLyProfit||0,
+      todayLadies:td.ladies||0,prevLadies:pd.ladies||0,budgetLadies:td.ladiesBudget||0,lyLadies:td.ladiesLy||0,profitLadies:td.ladiesProfit||0,lyProfitLadies:td.ladiesLyProfit||0,
+      budgetTotal:td.totalBudget||0,lyTotal:td.totalLy||0,profitTotal:td.totalProfit||0,lyProfitTotal:td.totalLyProfit||0,
+      yoy:yoy,budgetRatio:td.totalBudget?td.total/td.totalBudget*100:null,judgment:judgeTwoAxis(pct,yoy),
+      grossRateTotal:grossMarginRate(td.totalProfit||0,td.total||0),profitYoy:td.totalLyProfit?td.totalProfit/td.totalLyProfit*100:null,
+      grossRateMens:grossMarginRate(td.mensProfit||0,td.mens||0),profitYoyMens:td.mensLyProfit?td.mensProfit/td.mensLyProfit*100:null,
+      mensYoy:td.mensLy?td.mens/td.mensLy*100:null,mensBudgetRatio:td.mensBudget?td.mens/td.mensBudget*100:null,
+      grossRateLadies:grossMarginRate(td.ladiesProfit||0,td.ladies||0),profitYoyLadies:td.ladiesLyProfit?td.ladiesProfit/td.ladiesLyProfit*100:null,
+      ladiesYoy:td.ladiesLy?td.ladies/td.ladiesLy*100:null,ladiesBudgetRatio:td.ladiesBudget?td.ladies/td.ladiesBudget*100:null,
+      mainMens:findMainCategory(z,'0075',direction),mainLadies:findMainCategory(z,'0187',direction)};
+  }).sort(function(a,b){return b.pct-a.pct;});
+
+  var nationalChange=allZoneChanges.find(function(z){return z.zone==='全社計';});
+  var zoneOnlyChanges=allZoneChanges.filter(function(z){return z.zone!=='全社計'&&Math.abs(z.pct)>=10;});
+  var zoneUpDown=[].concat(
+    nationalChange?[nationalChange]:[],
+    zoneOnlyChanges.filter(function(z){return z.pct>0;}).slice(0,3),
+    zoneOnlyChanges.filter(function(z){return z.pct<0;}).slice(-3).reverse()
+  );
+  zoneUpDown.forEach(function(z){
+    var isUp=z.pct>0;var tempNote='';
+    if(Math.abs(z.tempDiff)>=2){
+      var tl='平均気温'+z.tempCompareLabel;
+      if(isUp&&z.tempDiff>=2)tempNote=tl+'+'+z.tempDiff.toFixed(1)+'℃ → 気温寄与の可能性';
+      else if(isUp&&z.tempDiff<=-2)tempNote=tl+z.tempDiff.toFixed(1)+'℃ → 気温以外の要因で伸長';
+      else if(!isUp&&z.tempDiff<=-2)tempNote=tl+z.tempDiff.toFixed(1)+'℃ → 気温寄与の可能性';
+      else if(!isUp&&z.tempDiff>=2)tempNote=tl+'+'+z.tempDiff.toFixed(1)+'℃にもかかわらず下落';
     }
-    alerts.push({zone:z,pct:pct,today:td.total,prev:pd.total,todayD:todayD,prevD:prevD,
+    alerts.push({type:isUp?'zone_up':'zone_down',zone:z.zone,pct:z.pct,today:z.today,prev:z.prev,tempNote:tempNote,todayD:todayD,prevD:prevD,
       compareLabel:comparison.label,compareRateLabel:comparison.rateLabel,compareDiffLabel:comparison.diffLabel,
-      yoy:yoy,budgetRatio:budgetRatio,budgetTotal:td.budget,lyTotal:td.ly,
-      profitTotal:td.profit,grossRateTotal:grossRateTotal,profitYoy:profitYoy,
-      todayMens:td.mens,prevMens:pd.mens||0,mensYoy:mensYoy,mensBudgetRatio:mensBudgetRatio,profitMens:td.mensProfit,grossRateMens:grossRateMens,profitYoyMens:profitYoyMens,
-      todayLadies:td.ladies,prevLadies:pd.ladies||0,ladiesYoy:ladiesYoy,ladiesBudgetRatio:ladiesBudgetRatio,profitLadies:td.ladiesProfit,grossRateLadies:grossRateLadies,profitYoyLadies:profitYoyLadies,
-      judgment:judgeTwoAxis(pct,yoy),tempNote:tempNote,isUp:isUp});
+      todayMens:z.todayMens,prevMens:z.prevMens,budgetMens:z.budgetMens,lyMens:z.lyMens,mensYoy:z.mensYoy,mensBudgetRatio:z.mensBudgetRatio,
+      profitMens:z.profitMens,lyProfitMens:z.lyProfitMens,grossRateMens:z.grossRateMens,profitYoyMens:z.profitYoyMens,
+      todayLadies:z.todayLadies,prevLadies:z.prevLadies,budgetLadies:z.budgetLadies,lyLadies:z.lyLadies,ladiesYoy:z.ladiesYoy,ladiesBudgetRatio:z.ladiesBudgetRatio,
+      profitLadies:z.profitLadies,lyProfitLadies:z.lyProfitLadies,grossRateLadies:z.grossRateLadies,profitYoyLadies:z.profitYoyLadies,
+      budgetTotal:z.budgetTotal,lyTotal:z.lyTotal,yoy:z.yoy,budgetRatio:z.budgetRatio,judgment:z.judgment,
+      profitTotal:z.profitTotal,lyProfitTotal:z.lyProfitTotal,grossRateTotal:z.grossRateTotal,profitYoy:z.profitYoy,
+      mainMens:z.mainMens,mainLadies:z.mainLadies});
   });
+
+  // ── サブカテアラート ──
+  var subcatChanges=buildSubcatChanges();
+  var subcatUpDown=[].concat(
+    subcatChanges.filter(function(s){return s.diff>0;}).sort(function(a,b){return b.impactAmount-a.impactAmount;}).slice(0,3),
+    subcatChanges.filter(function(s){return s.diff<0;}).sort(function(a,b){return b.impactAmount-a.impactAmount;}).slice(0,3)
+  );
+  subcatUpDown.forEach(function(s){
+    alerts.push({type:s.diff>0?'subcat_up':'subcat_down',
+      部門名:s.bumonName,カテゴリ名:s.category,サブカテ名:s.subcategory,
+      pct:s.pct,diff:s.diff,todayAmt:s.todayAmt,prevAmt:s.prevAmt,profitAmt:s.profitAmt,profitLyAmt:s.profitLyAmt,
+      grossRate:s.grossRate,profitYoy:s.profitYoy,goodZones:s.goodZones,badZones:s.badZones,
+      todayD:todayD,prevD:prevD,compareLabel:comparison.label,compareRateLabel:comparison.rateLabel,compareDiffLabel:comparison.diffLabel});
+  });
+
   if(!alerts.length){section.hidden=true;return;}
-  alerts.sort(function(a,b){return Math.abs(b.pct)-Math.abs(a.pct);});
   section.hidden=false;
   countBadge.textContent=alerts.length+'件';
+
+  // ── HTML ヘルパー ──
   var fY=function(v){return(v===null||v===undefined||Number.isNaN(Number(v)))?'-':Math.round(Number(v)).toLocaleString('ja-JP')+'円';};
   var fR=function(v){return(v===null||Number.isNaN(Number(v)))?'-':Number(v).toFixed(1)+'%';};
   var fD=function(v){var n=Number(v||0);return(n>0?'+':'')+n.toLocaleString('ja-JP')+'円';};
   var rCls=function(v){return(v===null||Number.isNaN(Number(v)))?'':Number(v)>=100?'num-good':Number(v)>=95?'num-warn':'num-bad';};
-  var pCls=function(t,p){return!p?'':t>=p?'num-good':'num-bad';};
+  var pCls2=function(t,p){return!p?'':t>=p?'num-good':'num-bad';};
   var grossLine=function(profit,margin,pYoy){return'<div class="sales-gross-line">荒利 '+fY(profit)+' / 粗利率 '+fR(margin)+' / 荒利前年比 <span class="'+rCls(pYoy)+'">'+fR(pYoy)+'</span></div>';};
-  var bumonRow=function(label,todayV,prevV,yoy,budgetRatio,profit,grossRate,profitYoy){
-    return'<div class="sales-alert-bumon"><div class="sales-alert-bumon-head"><span>'+label+'</span><span>'+
-      '<span class="'+pCls(todayV,prevV)+'">'+escapeHtml(comparison.label)+' '+fR(prevV?(todayV-prevV)/prevV*100:null)+'</span> '+
-      '<span class="'+rCls(yoy)+'">前年 '+fR(yoy)+'</span> '+
-      '<span class="'+rCls(budgetRatio)+'">予算 '+fR(budgetRatio)+'</span> '+
-      '<span class="sales-alert-amount">'+fY(prevV)+' → '+fY(todayV)+'</span>'+
-      '</span></div>'+grossLine(profit,grossRate,profitYoy)+'</div>';
+  var fmtMain=function(item){
+    if(!item)return'<span class="sales-main-empty">明細なし</span>';
+    var pct=item.pct===null||item.pct===undefined?'-':(item.pct>0?'+':'')+item.pct.toFixed(1)+'%';
+    var cls=item.diff>=0?'num-good':'num-bad';
+    return'<span class="sales-main-name">'+escapeHtml(item.category)+' / '+escapeHtml(item.subcategory)+'</span>'+
+      '<span class="'+cls+'">金額影響 '+escapeHtml(fD(item.diff))+'</span>'+
+      '<span class="sales-main-amount">'+escapeHtml(pct)+'</span>'+
+      '<span class="sales-main-amount">荒利 '+escapeHtml(fY(item.profit))+'</span>'+
+      '<span class="'+rCls(item.profitYoy)+'">荒利前年比 '+escapeHtml(fR(item.profitYoy))+'</span>';
   };
+  var fmtSubcatRow=function(item){
+    var pct=item.pct===null||item.pct===undefined?'-':(item.pct>0?'+':'')+item.pct.toFixed(1)+'%';
+    var cls=item.diff>=0?'num-good':'num-bad';
+    return'<li><span class="sales-subcat-name">'+escapeHtml(item.zone)+'</span>'+
+      '<span class="'+cls+'">'+escapeHtml(fD(item.diff))+'</span>'+
+      '<span class="sales-main-amount">'+escapeHtml(pct)+'</span>'+
+      '<span class="sales-zone-yoy '+rCls(item.yoy)+'">前年比 '+escapeHtml(fR(item.yoy))+'</span>'+
+      '<span class="sales-zone-yoy '+rCls(item.profitYoy)+'">荒利前年比 '+escapeHtml(fR(item.profitYoy))+'</span></li>';
+  };
+  var fmtSubcatList=function(items){
+    if(!items||!items.length)return'<div class="sales-main-empty">該当なし</div>';
+    return'<ol class="sales-subcat-list">'+items.map(fmtSubcatRow).join('')+'</ol>';
+  };
+
   container.innerHTML=alerts.map(function(a){
-    var cls=a.isUp?'num-good':'num-bad';
-    var arrow=a.isUp?'▲':'▼';
-    var pctStr=(a.isUp?'+':'')+a.pct.toFixed(1)+'%';
-    var yoyStr=fR(a.yoy);var budgetStr=fR(a.budgetRatio);
+    var isUp=a.type==='zone_up'||a.type==='subcat_up';
+    var isZone=a.type==='zone_up'||a.type==='zone_down';
+    var cls=isUp?'num-good':'num-bad';
+    var arrow=isUp?'▲':'▼';
+    var pctStr=(isUp?'+':'')+a.pct.toFixed(1)+'%';
+    var yoyStr=isZone?fR(a.yoy):'-';
+    var budgetStr=isZone?fR(a.budgetRatio):'-';
+    var prevAmt=isZone?a.prev:a.prevAmt;
+    var todAmt=isZone?a.today:a.todayAmt;
+    var title=isZone
+      ?escapeHtml(a.zone)+'：<span class="'+cls+'">'+escapeHtml(a.compareRateLabel)+' '+pctStr+'</span> <span class="'+rCls(a.yoy)+'">前年比 '+yoyStr+'</span> <span class="'+rCls(a.budgetRatio)+'">予算比 '+budgetStr+'</span>'
+      :escapeHtml(a.サブカテ名)+'：<span class="'+cls+'">'+escapeHtml(a.compareRateLabel)+' '+pctStr+'</span> <span class="'+cls+'">金額影響 '+escapeHtml(fD(a.diff))+'</span>';
+    var label=isZone
+      ?escapeHtml(a.zone)+'　ゾーン売上'
+      :escapeHtml(a.部門名)+' / '+escapeHtml(a.カテゴリ名)+'（全社計）';
+    var judgment=isZone&&a.judgment?'<div class="sales-judgment '+escapeAttribute(a.judgment.className||'')+'">2軸判定：'+escapeHtml(a.judgment.label)+'</div>':'';
+    var bumonBreakdown=isZone?'<div class="sales-alert-breakdown">'+
+      '<div class="sales-alert-bumon"><div class="sales-alert-bumon-head"><span>メンズ</span><span>'+
+        '<span class="'+pCls2(a.todayMens,a.prevMens)+'">'+escapeHtml(a.compareLabel)+' '+fR(a.prevMens?(a.todayMens-a.prevMens)/a.prevMens*100:null)+'</span> '+
+        '<span class="'+rCls(a.mensYoy)+'">前年 '+fR(a.mensYoy)+'</span> '+
+        '<span class="'+rCls(a.mensBudgetRatio)+'">予算 '+fR(a.mensBudgetRatio)+'</span> '+
+        '<span class="sales-alert-amount">'+fY(a.prevMens)+' → '+fY(a.todayMens)+'</span>'+
+      '</span></div>'+
+      '<div class="sales-alert-main">'+fmtMain(a.mainMens)+'</div>'+
+      grossLine(a.profitMens,a.grossRateMens,a.profitYoyMens)+'</div>'+
+      '<div class="sales-alert-bumon"><div class="sales-alert-bumon-head"><span>レディース</span><span>'+
+        '<span class="'+pCls2(a.todayLadies,a.prevLadies)+'">'+escapeHtml(a.compareLabel)+' '+fR(a.prevLadies?(a.todayLadies-a.prevLadies)/a.prevLadies*100:null)+'</span> '+
+        '<span class="'+rCls(a.ladiesYoy)+'">前年 '+fR(a.ladiesYoy)+'</span> '+
+        '<span class="'+rCls(a.ladiesBudgetRatio)+'">予算 '+fR(a.ladiesBudgetRatio)+'</span> '+
+        '<span class="sales-alert-amount">'+fY(a.prevLadies)+' → '+fY(a.todayLadies)+'</span>'+
+      '</span></div>'+
+      '<div class="sales-alert-main">'+fmtMain(a.mainLadies)+'</div>'+
+      grossLine(a.profitLadies,a.grossRateLadies,a.profitYoyLadies)+'</div></div>':'';
+    var subcatZoneBlock=!isZone?'<div class="sales-zone-subcats">'+
+      '<div class="sales-zone-subcat-group"><div class="sales-zone-subcat-title num-good">良いゾーン 上位3</div>'+fmtSubcatList(a.goodZones)+'</div>'+
+      '<div class="sales-zone-subcat-group"><div class="sales-zone-subcat-title num-bad">悪いゾーン 上位3</div>'+fmtSubcatList(a.badZones)+'</div></div>':'';
     return'<article class="card">'+
-      '<div class="meta"><span>'+escapeHtml(a.todayD)+'</span><span>ゾーン</span><span class="'+cls+'" style="font-weight:800">'+arrow+' '+escapeHtml(a.zone)+'　ゾーン売上</span></div>'+
-      '<div class="card-title">'+escapeHtml(a.zone)+'：<span class="'+cls+'">'+escapeHtml(a.compareRateLabel)+' '+pctStr+'</span> <span class="'+rCls(a.yoy)+'">前年比 '+yoyStr+'</span> <span class="'+rCls(a.budgetRatio)+'">予算比 '+budgetStr+'</span></div>'+
-      '<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(a.prev)+' → 本日 '+fY(a.today)+' / 予算 '+fY(a.budgetTotal)+' / 前年同週 '+fY(a.lyTotal)+'</div>'+
-      grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy)+
-      (a.judgment?'<div class="sales-judgment '+escapeAttribute(a.judgment.className||'')+'">2軸判定：'+escapeHtml(a.judgment.label)+'</div>':'')+
-      '<div class="sales-alert-breakdown">'+bumonRow('メンズ',a.todayMens,a.prevMens,a.mensYoy,a.mensBudgetRatio,a.profitMens,a.grossRateMens,a.profitYoyMens)+bumonRow('レディース',a.todayLadies,a.prevLadies,a.ladiesYoy,a.ladiesBudgetRatio,a.profitLadies,a.grossRateLadies,a.profitYoyLadies)+'</div>'+
+      '<div class="meta"><span>'+escapeHtml(a.todayD)+'</span><span>'+(isZone?'ゾーン':'サブカテゴリ')+'</span><span class="'+cls+'" style="font-weight:800">'+arrow+' '+label+'</span></div>'+
+      '<div class="card-title">'+title+'</div>'+
+      '<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(prevAmt)+' → 本日 '+fY(todAmt)+
+        (isZone?' / 予算 '+fY(a.budgetTotal)+' / 前年同週 '+fY(a.lyTotal):'')+
+      '</div>'+
+      (isZone?grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy):grossLine(a.profitAmt,a.grossRate,a.profitYoy))+
+      judgment+bumonBreakdown+subcatZoneBlock+
       (a.tempNote?'<div class="action" style="font-size:12px;margin-top:6px">🌡️ '+escapeHtml(a.tempNote)+'</div>':'')+
       '</article>';
   }).join('');
