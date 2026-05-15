@@ -857,7 +857,22 @@ function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks, compa
   if(!dateSelect||!summary||!cards||!tbody)return;
   var allDataDates=([].concat(comparisonDates&&comparisonDates.length?comparisonDates:[...new Set((allRows||[]).map(function(r){return r.date;}).filter(Boolean))])).sort().reverse();
   var dailyDates=(dates&&dates.length?dates:allDataDates.slice(0,1)).slice();
-  var weekWindows=(productWeeks||[]).slice(0,8);
+  var _toMonday=function(ds){var d=new Date(ds+'T00:00:00');var day=d.getDay();var diff=day===0?-6:1-day;d.setDate(d.getDate()+diff);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  var _addDays=function(ds,n){var d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  var buildWeekWindowsFromDates=function(dates){
+    if(!dates.length)return[];
+    var mondaySet={};
+    dates.forEach(function(d){var mon=_toMonday(d);if(!mondaySet[mon])mondaySet[mon]=true;});
+    return Object.keys(mondaySet).sort().reverse().slice(0,8).map(function(mon){
+      var endDate=_addDays(mon,6);
+      var prevMon=_addDays(mon,-7);
+      var prevEnd=_addDays(prevMon,6);
+      var parts=mon.split('-');
+      var label=parseInt(parts[1])+'月'+parseInt(parts[2])+'日週';
+      return{key:mon,label:label,startDate:mon,endDate:endDate,compareKey:prevMon,compareStartDate:prevMon,compareEndDate:prevEnd};
+    });
+  };
+  var weekWindows=(productWeeks&&productWeeks.length?productWeeks.slice(0,8):buildWeekWindowsFromDates(allDataDates));
   if(!allRows.length&&!dailyDates.length){
     dateSelect.innerHTML='<option>データなし</option>';categorySelect.innerHTML='<option value="">全カテゴリ</option>';countBadge.textContent='0件';
     summary.innerHTML='';cards.innerHTML='<div class="empty">商品実績データはまだありません。</div>';tbody.innerHTML='<tr><td colspan="16">商品実績データはまだありません。</td></tr>';return;
