@@ -162,6 +162,7 @@
     .product-zone-list strong { font-variant-numeric:tabular-nums; }
     .product-zone-yoy { margin-left:4px; white-space:nowrap; }
     .product-table-wrap { max-height:calc(100vh - 180px); }
+    .mode-bar { margin-bottom:4px; }
     .category-table-wrap { overflow-x:hidden; }
     .zs-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(480px,1fr)); gap:12px; }
     .zs-card { padding:0; overflow:hidden; }
@@ -217,6 +218,7 @@
     <main>
       <section id="overview" class="dashboard-section active">
         <div class="section-heading"><h2>今日の重要アラート</h2><span id="alertCount" class="badge">0件</span></div>
+        <div class="mode-bar" id="overviewModeBar"></div>
         <div id="todayAlerts" class="card-grid"></div>
         <div id="salesAlertSection" hidden>
           <div class="section-heading" style="margin-top:24px">
@@ -229,6 +231,7 @@
 
       <section id="weather" class="dashboard-section">
         <div class="section-heading"><h2>ゾーン別 気温アラート</h2></div>
+        <div class="mode-bar" id="weatherModeBar"></div>
         <div id="weatherCards" class="card-grid compact"></div>
         <div class="weather-trend">
           <div class="trend-toolbar">
@@ -257,11 +260,13 @@
           <h2>ゾーン別 売上実績</h2>
           <label class="toolbar-label"><span>日付</span><select id="salesDateSelect"></select></label>
         </div>
+        <div class="mode-bar" id="salesModeBar"></div>
         <div id="salesContent"></div>
       </section>
 
       <section id="category" class="dashboard-section">
         <div class="section-heading"><h2>カテゴリ別 実績</h2></div>
+        <div class="mode-bar" id="categoryModeBar"></div>
         <div class="toolbar-row">
           <label class="toolbar-label"><span>日付</span><select id="categoryDateSelect"></select></label>
           <label class="toolbar-label"><span>ゾーン</span><select id="categoryZoneSelect"></select></label>
@@ -336,6 +341,7 @@
 
       <section id="news" class="dashboard-section">
         <div class="section-heading"><h2>市場ニュース</h2></div>
+        <div class="mode-bar" id="newsModeBar"></div>
         <div id="newsList" class="list"></div>
       </section>
 

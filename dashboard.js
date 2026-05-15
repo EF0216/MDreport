@@ -35,7 +35,54 @@ function pickComparisonDate(dates, date) {
 }
 
 // ── 状態 ─────────────────────────────────────────────────────
-const state = { loading: false, data: null };
+const state = { loading: false, data: null, dateMode: 'daily', weekKey: '', weekWindows: [] };
+
+// ── グローバル週ウィンドウ ────────────────────────────────────
+function _gwToMonday(ds){var d=new Date(ds+'T00:00:00');var day=d.getDay();var diff=day===0?-6:1-day;d.setDate(d.getDate()+diff);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function _gwAddDays(ds,n){var d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function buildGlobalWeekWindows(dates){
+  if(!dates||!dates.length)return[];
+  var mondaySet={};
+  dates.forEach(function(d){if(d)mondaySet[_gwToMonday(d)]=true;});
+  return Object.keys(mondaySet).sort().reverse().slice(0,8).map(function(mon){
+    var end=_gwAddDays(mon,6);var prevMon=_gwAddDays(mon,-7);var prevEnd=_gwAddDays(prevMon,6);
+    var p=mon.split('-');
+    return{key:mon,label:parseInt(p[1])+'月'+parseInt(p[2])+'日週',startDate:mon,endDate:end,compareKey:prevMon,compareStartDate:prevMon,compareEndDate:prevEnd};
+  });
+}
+function currentWeekWindow(){return state.weekWindows.find(function(w){return w.key===state.weekKey;})||state.weekWindows[0]||null;}
+
+function renderModeBar(barId){
+  var el=document.getElementById(barId);if(!el)return;
+  var weeks=state.weekWindows;
+  el.innerHTML='<div class="toolbar-row">'+
+    '<div class="segmented-control">'+
+    '<button type="button" class="segment'+(state.dateMode==='daily'?' is-active':'')+'" data-mode="daily">日別</button>'+
+    '<button type="button" class="segment'+(state.dateMode==='weekly'?' is-active':'')+'" data-mode="weekly">週別</button>'+
+    '</div>'+
+    '<div class="week-tabs'+(state.dateMode==='weekly'&&weeks.length?' is-visible':'')+'" id="'+barId+'Weeks">'+
+    weeks.map(function(w){return'<button type="button" class="week-tab'+(w.key===state.weekKey?' is-active':'')+'" data-week="'+w.key+'">'+w.label+'</button>';}).join('')+
+    '</div></div>';
+  el.querySelectorAll('.segment').forEach(function(btn){btn.onclick=function(){
+    var mode=btn.dataset.mode;if(mode==='weekly'&&!weeks.length)return;
+    state.dateMode=mode;if(mode==='weekly'&&!state.weekKey&&weeks.length)state.weekKey=weeks[0].key;
+    renderDashboard(state.data);};});
+  el.querySelectorAll('.week-tab').forEach(function(btn){btn.onclick=function(){state.weekKey=btn.dataset.week;renderDashboard(state.data);};});
+}
+
+function aggregateBumonPeriod(rows,startDate,endDate,dateKey){
+  var map={};
+  rows.filter(function(r){return r.date>=startDate&&r.date<=endDate;}).forEach(function(r){
+    var key=[String(r.zone_code||''),r.zone_name||'',String(r['部門CD']||''),r['部門名']||''].join('|');
+    if(!map[key])map[key]=Object.assign({},r,{date:dateKey,'売上実績':0,'前年同週同曜日実績':0,'売上予算':0,'販売荒利高':0,'前年荒利高':0,'達成率':null,'前年比':null,'荒利率':null,_hasLy:false,_hasProfit:false,_hasLyProfit:false});
+    map[key]['売上実績']+=Number(r['売上実績']||0);
+    map[key]['売上予算']+=Number(r['売上予算']||0);
+    if(r['前年同週同曜日実績']!==''&&r['前年同週同曜日実績']!==null){map[key]['前年同週同曜日実績']+=Number(r['前年同週同曜日実績']||0);map[key]._hasLy=true;}
+    var p=grossProfitFromRow(r,'売上実績');if(!Number.isNaN(p)){map[key]['販売荒利高']+=p;map[key]._hasProfit=true;}
+    var lp=lastYearGrossProfitFromRow(r);if(!Number.isNaN(lp)){map[key]['前年荒利高']+=lp;map[key]._hasLyProfit=true;}
+  });
+  return Object.values(map);
+}
 
 // ── 初期化 ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -71,10 +118,28 @@ async function loadDashboard() {
 function renderDashboard(data) {
   hideError();
   document.getElementById('updatedAt').textContent = data.updatedAt || '-';
+
+  // グローバル週ウィンドウ初期化
+  var allDates=[...new Set([
+    ...(data.legwearBumon||[]).map(function(r){return r.date;}),
+    ...(data.legwearCategory||[]).map(function(r){return r.date;})
+  ].filter(Boolean))].sort().reverse();
+  state.weekWindows=buildGlobalWeekWindows(allDates);
+  if(state.dateMode==='weekly'&&!state.weekKey&&state.weekWindows.length)state.weekKey=state.weekWindows[0].key;
+  ['overviewModeBar','weatherModeBar','salesModeBar','categoryModeBar','newsModeBar'].forEach(renderModeBar);
+
   renderTodayAlerts(buildImportantAlerts(data));
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherLatest || []);
   renderWeather(data.weatherLatest || [], data.weatherTrend || [], data.zoneOrder || []);
-  renderSales(data.legwearBumon || [], data.legwearDates || [], data.weatherLatest || []);
+
+  // 売上タブ: 週別モード対応
+  var bumonRows=data.legwearBumon||[];
+  var bumonDates=data.legwearDates||[];
+  if(state.dateMode==='weekly'){
+    var ww=currentWeekWindow();
+    if(ww){bumonRows=aggregateBumonPeriod(data.legwearBumon||[],ww.startDate,ww.endDate,ww.key).concat(aggregateBumonPeriod(data.legwearBumon||[],ww.compareStartDate,ww.compareEndDate,ww.compareKey));bumonDates=[ww.key];}
+  }
+  renderSales(bumonRows, bumonDates, data.weatherLatest || []);
   renderCategory(data.legwearCategory || [], data.legwearDates || []);
   renderProductAnalysis(
     data.legwearCategory || [],
@@ -413,7 +478,7 @@ function renderSales(allRows, dates, weatherItems) {
       var tP=(!Number.isNaN(mens.profit)?mens.profit:0)+(!Number.isNaN(ladies.profit)?ladies.profit:0);
       var tLP=(!Number.isNaN(mens.lyProfit)?mens.lyProfit:0)+(!Number.isNaN(ladies.lyProfit)?ladies.lyProfit:0);
       var total={budget:tB||NaN,actual:tA||NaN,ratio:tB?Math.round(tA/tB*1000)/10:NaN,ly:tL||NaN,yoy:tL?Math.round(tA/tL*1000)/10:NaN,profit:tP||NaN,grossRate:grossMarginRate(tP,tA),lyProfit:tLP||NaN,profitYoy:yoyRateValue(tP,tLP)};
-      var wData=z.isTotal?null:(weatherByZone[z.name]||null);
+      var wData=z.isTotal?(weatherByZone['全国平均']||weatherByZone['全社計']||null):(weatherByZone[z.name]||null);
       return '<article class="card zs-card'+(z.isTotal?' zs-card-total':'')+'"><div class="zs-card-head">'+escapeHtml(z.name)+'</div><div class="zs-cols">'+colHtml('メンズ',mens)+colHtml('レディース',ladies)+colHtml('合計',total)+tempColHtml(wData)+'</div></article>';
     }).join('')+'</div>';
   };
