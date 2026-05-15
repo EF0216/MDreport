@@ -130,7 +130,15 @@ function renderDashboard(data) {
 
   renderTodayAlerts(buildImportantAlerts(data));
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherLatest || []);
-  renderWeather(data.weatherLatest || [], data.weatherTrend || [], data.zoneOrder || []);
+
+  // 気温タブ: 週別モード対応
+  var weatherItems=data.weatherLatest||[];
+  var weatherTrendItems=data.weatherTrend||[];
+  if(state.dateMode==='weekly'){
+    var wwW=currentWeekWindow();
+    if(wwW){weatherItems=weatherTrendItems.filter(function(r){return r.date>=wwW.startDate&&r.date<=wwW.endDate;});}
+  }
+  renderWeather(weatherItems, weatherTrendItems, data.zoneOrder || []);
 
   // 売上タブ: 週別モード対応
   var bumonRows=data.legwearBumon||[];
@@ -148,7 +156,14 @@ function renderDashboard(data) {
     data.legwearWeeks || [],
     data.legwearDates || []
   );
-  renderNews(data.newsLatest || []);
+
+  // ニュースタブ: 週別モード対応
+  var newsItems=data.newsLatest||[];
+  if(state.dateMode==='weekly'){
+    var wwN=currentWeekWindow();
+    if(wwN){newsItems=newsItems.filter(function(r){return r.date>=wwN.startDate&&r.date<=wwN.endDate;});}
+  }
+  renderNews(newsItems);
   renderReviewNews(data.newsReview || []);
   renderTags(data.analysisTags || []);
 }
