@@ -355,10 +355,11 @@ function renderSales(allRows, dates, weatherItems) {
   if(!dates.length){select.innerHTML='<option>データなし</option>';container.innerHTML='<div class="empty">売上データはまだありません。</div>';return;}
   select.innerHTML=dates.map(function(d){return'<option value="'+escapeAttribute(d)+'">'+escapeHtml(d)+'</option>';}).join('');
   var allWeatherItems=weatherItems||[];
+  var weatherByZoneAll={};
+  allWeatherItems.forEach(function(w){if(w.zone)weatherByZoneAll[w.zone]=w;});
   var renderForDate=function(date){
     var rows=allRows.filter(function(r){return r.date===date;});
-    var weatherByZone={};
-    allWeatherItems.filter(function(w){return w.date===date;}).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
+    var weatherByZone=weatherByZoneAll;
     if(!rows.length){container.innerHTML='<div class="empty">この日のデータはありません。</div>';return;}
     var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
     var totalRows=rows.filter(isAggr);
