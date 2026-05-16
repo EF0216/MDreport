@@ -1146,8 +1146,19 @@ function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks, compa
         '</div>'+
         '</article>';
     }).join('')||'<div class="empty">条件に合う商品実績はありません。</div>';
+    var _date=activeDateKey();
+    var _dw=weatherTrend.filter(function(w){return w.date===_date&&w.zone&&w.zone!=='全国平均';});
+    var _avgTD=_dw.length?_dw.reduce(function(s,w){return s+Number(w.temp_vs_last_week||0);},0)/_dw.length:null;
+    var buildTempMemo=function(row){
+      if(_avgTD===null||Number.isNaN(_avgTD))return'-';
+      var td=_avgTD;var isUp=row.dayDiff>=0;
+      var lbl=Math.abs(td)<2?'気温影響薄い':isUp&&td>=2?'気温上昇寄与の可能性':isUp&&td<=-2?'気温以外の要因で伸長':!isUp&&td<=-2?'気温影響あり':'気温影響逆';
+      var note=Math.abs(td)<2?'→ 気温以外の要因も確認':isUp&&td>=2?'→ 気温寄与の可能性':isUp&&td<=-2?'→ 気温以外の要因で伸長':!isUp&&td<=-2?'→ 気温寄与の可能性':'→ 気温+にもかかわらず下落';
+      return lbl+' 主要ゾーン気温 前週差 '+(td>=0?'+':'')+td.toFixed(1)+'℃ / '+(row.compareRateLabel||'前週比')+' '+pctText(row.dayPct,true)+' / 前年比 '+pctText(row.yoy)+' / 荒利前年比 '+pctText(row.profitYoy)+' '+note;
+    };
+    var fmtZoneText=function(zones){if(!zones||!zones.length)return'-';return zones.map(function(z){return z.zone+' '+formatSignedYen(z.diff);}).join(' / ');};
     tbody.innerHTML=sorted.slice(0,80).map(function(row){
-      return '<tr><td>'+escapeHtml(row.bumonName)+'</td><td>'+escapeHtml(row.categoryName)+'</td><td>'+escapeHtml(row.subcategoryName)+'</td><td class="num">'+formatYen(row.amount)+'</td><td class="num">'+(row.prevDate?formatYen(row.prevAmount):'-')+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+formatSignedYen(row.dayDiff)+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+pctText(row.dayPct,true)+'</td><td class="num">'+(row.hasLy?formatYen(row.lyAmount):'-')+'</td><td class="num '+pctClass(row.yoy)+'">'+pctText(row.yoy)+'</td><td class="num">'+(row.hasProfit?formatYen(row.profit):'-')+'</td><td class="num">'+formatPct(row.grossRate)+'</td><td class="num">'+(row.hasLyProfit?formatYen(row.lyProfit):'-')+'</td><td class="num '+pctClass(row.profitYoy)+'">'+pctText(row.profitYoy)+'</td><td>-</td><td>-</td><td>-</td></tr>';
+      return '<tr><td>'+escapeHtml(row.bumonName)+'</td><td>'+escapeHtml(row.categoryName)+'</td><td>'+escapeHtml(row.subcategoryName)+'</td><td class="num">'+formatYen(row.amount)+'</td><td class="num">'+(row.prevDate?formatYen(row.prevAmount):'-')+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+formatSignedYen(row.dayDiff)+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+pctText(row.dayPct,true)+'</td><td class="num">'+(row.hasLy?formatYen(row.lyAmount):'-')+'</td><td class="num '+pctClass(row.yoy)+'">'+pctText(row.yoy)+'</td><td class="num">'+(row.hasProfit?formatYen(row.profit):'-')+'</td><td class="num">'+formatPct(row.grossRate)+'</td><td class="num">'+(row.hasLyProfit?formatYen(row.lyProfit):'-')+'</td><td class="num '+pctClass(row.profitYoy)+'">'+pctText(row.profitYoy)+'</td><td>'+escapeHtml(buildTempMemo(row))+'</td><td>'+escapeHtml(fmtZoneText(row.goodZones))+'</td><td>'+escapeHtml(fmtZoneText(row.badZones))+'</td></tr>';
     }).join('');
   };
   var renderWeekTabs=function(){
