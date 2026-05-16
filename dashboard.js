@@ -647,11 +647,24 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   var countBadge=document.getElementById('salesAlertCount');
   if(!section)return;
   var dates=[...new Set(bumonRows.map(function(r){return r.date;}).filter(Boolean))].sort().reverse();
-  if(dates.length<2){section.hidden=true;return;}
-  var todayD=dates[0];
-  var comparison=pickComparisonDate(dates,todayD);
-  var prevD=comparison.date;
-  if(!prevD){section.hidden=true;return;}
+  var currentDates,prevDates,todayD,prevD,comparison;
+  if(state.dateMode==='weekly'){
+    var _ww=currentWeekWindow();
+    if(!_ww){section.hidden=true;return;}
+    var _pw=state.weekWindows.find(function(w){return w.key===_ww.compareKey;});
+    currentDates=dates.filter(function(d){return d>=_ww.startDate&&d<=_ww.endDate;});
+    prevDates=_pw?dates.filter(function(d){return d>=_pw.startDate&&d<=_pw.endDate;}):[];
+    if(!currentDates.length){section.hidden=true;return;}
+    todayD=_ww.endDate;prevD=_pw?_pw.endDate:'';
+    comparison={label:_ww.label+' vs 前週',rateLabel:'前週比',diffLabel:'前週差'};
+  }else{
+    if(dates.length<2){section.hidden=true;return;}
+    todayD=dates[0];
+    comparison=pickComparisonDate(dates,todayD);
+    prevD=comparison.date;
+    if(!prevD){section.hidden=true;return;}
+    currentDates=[todayD];prevDates=[prevD];
+  }
   var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
 
   // weatherByZone（日付フィルタなし、GAS版に準拠）
@@ -682,8 +695,8 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     if(national.total>0)m['全社計']=national;
     return m;
   };
-  var zTodayD=sumByZoneDetail(bumonRows.filter(function(r){return r.date===todayD;}));
-  var zPrevD=sumByZoneDetail(bumonRows.filter(function(r){return r.date===prevD;}));
+  var zTodayD=sumByZoneDetail(bumonRows.filter(function(r){return currentDates.includes(r.date);}));
+  var zPrevD=sumByZoneDetail(bumonRows.filter(function(r){return prevDates.includes(r.date);}));
   var zToday=Object.fromEntries(Object.entries(zTodayD).map(function(e){return[e[0],e[1].total];}));
   var zPrev=Object.fromEntries(Object.entries(zPrevD).map(function(e){return[e[0],e[1].total];}));
 
@@ -708,8 +721,8 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     });
     return m;
   };
-  var catTodayMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return r.date===todayD;}));
-  var catPrevMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return r.date===prevD;}));
+  var catTodayMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return currentDates.includes(r.date);}));
+  var catPrevMap=sumCatByZoneBumon((categoryRows||[]).filter(function(r){return prevDates.includes(r.date);}));
   Object.keys(catPrevMap).forEach(function(key){
     if(!catTodayMap[key]){catTodayMap[key]=Object.assign({},catPrevMap[key],{today:0,ly:0,hasLy:false,profit:0,profitLy:0,hasProfit:false,hasProfitLy:false});}
     catTodayMap[key].prev=catPrevMap[key].today||0;
