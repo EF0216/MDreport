@@ -653,10 +653,12 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     if(!_ww){section.hidden=true;return;}
     var _pw=state.weekWindows.find(function(w){return w.key===_ww.compareKey;});
     currentDates=dates.filter(function(d){return d>=_ww.startDate&&d<=_ww.endDate;});
-    prevDates=_pw?dates.filter(function(d){return d>=_pw.startDate&&d<=_pw.endDate;}):[];
+    // 当週と同じ曜日（7日前）だけを前週の比較対象にする
+    var _correspondingPrev=currentDates.map(function(d){var dt=new Date(d);dt.setDate(dt.getDate()-7);return dt.toISOString().slice(0,10);});
+    prevDates=dates.filter(function(d){return _correspondingPrev.includes(d);});
     if(!currentDates.length){section.hidden=true;return;}
     todayD=_ww.endDate;prevD=_pw?_pw.endDate:'';
-    comparison={label:_ww.label+' vs 前週',rateLabel:'前週比',diffLabel:'前週差'};
+    comparison={label:_ww.label+' vs 前週同曜日',rateLabel:'前週同曜日比',diffLabel:'前週同曜日差'};
   }else{
     if(dates.length<2){section.hidden=true;return;}
     todayD=dates[0];
