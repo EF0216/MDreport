@@ -1047,8 +1047,71 @@ function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks, compa
     downs.forEach(function(r,i){summaryCards.push(sumCard('落ち上位'+(i+1),escapeHtml(r.subcategoryName)+' <span class="num-bad">'+pctText(r.dayPct,true)+'</span>',rowDetail(r),'num-bad'));});
     if(bigYoyGap)summaryCards.push(sumCard('前年差注意',escapeHtml(bigYoyGap.subcategoryName)+' <span class="'+pctClass(bigYoyGap.yoy)+'">'+pctText(bigYoyGap.yoy)+'</span>',rowDetail(bigYoyGap)));
     summary.innerHTML=summaryCards.join('');
+    var buildProductZones=function(){
+      var date=activeDateKey();var comp=compForActive();var prevDate=comp.date;
+      var zRows=activeRows.filter(function(r){return r.date===date&&!isAggRow(r)&&matchesFilters(r);});
+      var pRows=prevDate?activeRows.filter(function(r){return r.date===prevDate&&!isAggRow(r)&&matchesFilters(r);}):[];
+      var zMap={};
+      zRows.forEach(function(r){
+        var pk=productKey(r);var zk=pk+'||'+(r.zone_name||'');
+        if(!zMap[zk])zMap[zk]={pk:pk,zone:r.zone_name||'',today:0,lyAmount:0,hasLy:false,profit:0,hasProfit:false,lyProfit:0,hasLyProfit:false};
+        zMap[zk].today+=Number(r['実績金額']||0);
+        if(r['前年同週同曜日実績']!==''&&r['前年同週同曜日実績']!==null){zMap[zk].lyAmount+=Number(r['前年同週同曜日実績']||0);zMap[zk].hasLy=true;}
+        var p=grossProfitFromRow(r,'実績金額');if(!Number.isNaN(p)){zMap[zk].profit+=p;zMap[zk].hasProfit=true;}
+        var lp=lastYearGrossProfitFromRow(r);if(!Number.isNaN(lp)){zMap[zk].lyProfit+=lp;zMap[zk].hasLyProfit=true;}
+      });
+      var pMap={};
+      pRows.forEach(function(r){var zk=productKey(r)+'||'+(r.zone_name||'');if(!pMap[zk])pMap[zk]={prev:0};pMap[zk].prev+=Number(r['実績金額']||0);});
+      var byPk={};
+      Object.keys(zMap).forEach(function(zk){
+        var z=zMap[zk];var prev=(pMap[zk]||{prev:0}).prev;var diff=z.today-prev;
+        var pct=prev?diff/prev*100:null;
+        var yoy=z.hasLy&&z.lyAmount?z.today/z.lyAmount*100:null;
+        var profitYoy=z.hasLyProfit&&z.lyProfit?z.profit/z.lyProfit*100:null;
+        if(!byPk[z.pk])byPk[z.pk]=[];
+        byPk[z.pk].push({zone:z.zone,today:z.today,diff:diff,pct:pct,yoy:yoy,profitYoy:profitYoy});
+      });
+      return byPk;
+    };
+    var productZones=buildProductZones();
+    rows.forEach(function(row){
+      var zones=productZones[row.key]||[];
+      row.goodZones=zones.filter(function(z){return z.diff>0;}).sort(function(a,b){return b.diff-a.diff;}).slice(0,3);
+      row.badZones=zones.filter(function(z){return z.diff<0;}).sort(function(a,b){return a.diff-b.diff;}).slice(0,3);
+    });
+    var fmtPZoneRow=function(z){
+      var pct=z.pct===null?'-':(z.pct>0?'+':'')+z.pct.toFixed(1)+'%';
+      var cls=z.diff>=0?'num-good':'num-bad';
+      return'<li><span class="sales-subcat-name">'+escapeHtml(z.zone)+'</span>'+
+        '<span class="sales-main-amount">実績 '+formatYen(z.today)+'</span>'+
+        '<span class="'+cls+'">'+formatSignedYen(z.diff)+'</span>'+
+        '<span class="sales-main-amount">'+pct+'</span>'+
+        '<span class="sales-zone-yoy '+pctClass(z.yoy)+'">前年比 '+pctText(z.yoy)+'</span>'+
+        '<span class="sales-zone-yoy '+pctClass(z.profitYoy)+'">荒利前年比 '+pctText(z.profitYoy)+'</span></li>';
+    };
+    var fmtPZoneList=function(zones){
+      if(!zones||!zones.length)return'<div class="sales-main-empty">該当なし</div>';
+      return'<ol class="sales-subcat-list">'+zones.map(fmtPZoneRow).join('')+'</ol>';
+    };
     cards.innerHTML=sorted.slice(0,12).map(function(row){
-      return '<article class="card product-card"><div class="meta"><span>'+escapeHtml(row.bumonName)+'</span><span>'+escapeHtml(row.categoryName)+'</span></div><div class="product-card-title">'+escapeHtml(row.subcategoryName)+'</div><div class="product-kpi-grid"><div><span>実績</span><strong>'+formatYen(row.amount)+'</strong></div><div><span>前週差</span><strong class="'+(row.dayDiff>=0?'num-good':'num-bad')+'">'+formatSignedYen(row.dayDiff)+'</strong></div><div><span>前週比</span><strong class="'+(row.dayDiff>=0?'num-good':'num-bad')+'">'+pctText(row.dayPct,true)+'</strong></div><div><span>前年比</span><strong class="'+pctClass(row.yoy)+'">'+pctText(row.yoy)+'</strong></div><div><span>荒利</span><strong>'+(row.hasProfit?formatYen(row.profit):'-')+'</strong></div><div><span>粗利率</span><strong>'+formatPct(row.grossRate)+'</strong></div></div></article>';
+      var diffCls=row.dayDiff>=0?'num-good':'num-bad';
+      return'<article class="card product-card">'+
+        '<div class="meta"><span>'+escapeHtml(row.bumonName)+'</span><span>'+escapeHtml(row.categoryName)+'</span></div>'+
+        '<div class="product-card-title">'+escapeHtml(row.subcategoryName)+'</div>'+
+        '<div class="product-kpi-grid">'+
+        '<div><span>実績</span><strong>'+formatYen(row.amount)+'</strong></div>'+
+        '<div><span>'+escapeHtml(row.compareDiffLabel||'前週差')+'</span><strong class="'+diffCls+'">'+formatSignedYen(row.dayDiff)+'</strong></div>'+
+        '<div><span>'+escapeHtml(row.compareRateLabel||'前週比')+'</span><strong class="'+diffCls+'">'+pctText(row.dayPct,true)+'</strong></div>'+
+        '<div><span>前年比</span><strong class="'+pctClass(row.yoy)+'">'+pctText(row.yoy)+'</strong></div>'+
+        '<div><span>荒利</span><strong>'+(row.hasProfit?formatYen(row.profit):'-')+'</strong></div>'+
+        '<div><span>粗利率</span><strong>'+formatPct(row.grossRate)+'</strong></div>'+
+        '<div><span>荒利前年比</span><strong class="'+pctClass(row.profitYoy)+'">'+pctText(row.profitYoy)+'</strong></div>'+
+        '</div>'+
+        '<div class="sales-zone-subcats">'+
+        '<div class="sales-zone-subcat-group"><div class="sales-zone-subcat-title num-good">伸びゾーン 上位3</div>'+fmtPZoneList(row.goodZones)+'</div>'+
+        '<div class="sales-zone-subcat-group"><div class="sales-zone-subcat-title num-bad">落ちゾーン 上位3</div>'+fmtPZoneList(row.badZones)+'</div>'+
+        '</div>'+
+        '</article>';
     }).join('')||'<div class="empty">条件に合う商品実績はありません。</div>';
     tbody.innerHTML=sorted.slice(0,80).map(function(row){
       return '<tr><td>'+escapeHtml(row.bumonName)+'</td><td>'+escapeHtml(row.categoryName)+'</td><td>'+escapeHtml(row.subcategoryName)+'</td><td class="num">'+formatYen(row.amount)+'</td><td class="num">'+(row.prevDate?formatYen(row.prevAmount):'-')+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+formatSignedYen(row.dayDiff)+'</td><td class="num '+(row.dayDiff>=0?'num-good':'num-bad')+'">'+pctText(row.dayPct,true)+'</td><td class="num">'+(row.hasLy?formatYen(row.lyAmount):'-')+'</td><td class="num '+pctClass(row.yoy)+'">'+pctText(row.yoy)+'</td><td class="num">'+(row.hasProfit?formatYen(row.profit):'-')+'</td><td class="num">'+formatPct(row.grossRate)+'</td><td class="num">'+(row.hasLyProfit?formatYen(row.lyProfit):'-')+'</td><td class="num '+pctClass(row.profitYoy)+'">'+pctText(row.profitYoy)+'</td><td>-</td><td>-</td><td>-</td></tr>';
