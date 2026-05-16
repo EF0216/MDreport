@@ -128,7 +128,9 @@ function renderDashboard(data) {
   if(state.dateMode==='weekly'&&!state.weekKey&&state.weekWindows.length)state.weekKey=state.weekWindows[0].key;
   ['overviewModeBar','weatherModeBar','salesModeBar','categoryModeBar','newsModeBar'].forEach(renderModeBar);
 
-  renderTodayAlerts(buildImportantAlerts(data));
+  var _alerts=buildImportantAlerts(data);
+  if(state.dateMode==='weekly'){var _wwA=currentWeekWindow();if(_wwA)_alerts=_alerts.filter(function(a){return a.date>=_wwA.startDate&&a.date<=_wwA.endDate;});}
+  renderTodayAlerts(_alerts);
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherLatest || []);
 
   // 気温タブ: 週別モード対応
