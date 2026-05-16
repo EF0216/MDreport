@@ -173,25 +173,21 @@ function renderDashboard(data) {
 }
 
 function buildImportantAlerts(data) {
-  const baseAlerts = data.todayAlerts || [];
-  const importantNews = (data.newsLatest || [])
-    .filter(row => Number(row.importance || 0) >= 4)
-    .map(row => ({
-      date: row.date,
-      category: row.category || 'ニュース',
-      keyword: row.keyword || row.title || 'ニュース',
-      alert_type: 'ニュース',
-      evidence: row.title,
-      importance: row.importance,
-      sales_check_point: row.md_insight || row.summary || 'ニュース内容を売上分析時の外部要因として確認',
-      action: row.source ? `${row.source} / ニュースタブで詳細確認` : 'ニュースタブで詳細確認',
-      created_at: row.created_at
-    }));
-  const seen = {};
-  return [...baseAlerts, ...importantNews].filter(item => {
-    const key = `${item.date||''}|${item.alert_type||''}|${item.evidence||item.keyword||''}`;
-    if (seen[key]) return false;
-    seen[key] = true;
+  var baseAlerts = data.alertHistory || data.todayAlerts || [];
+  var newsSource = data.newsHistory || (data.newsLatest || [])
+    .filter(function(row){return Number(row.importance||0)>=4;})
+    .map(function(row){return{
+      date:row.date,category:row.category||'ニュース',keyword:row.keyword||row.title||'ニュース',
+      alert_type:'ニュース',evidence:row.title,importance:row.importance,
+      sales_check_point:row.md_insight||row.summary||'ニュース内容を売上分析時の外部要因として確認',
+      action:row.source?row.source+' / ニュースタブで詳細確認':'ニュースタブで詳細確認',
+      created_at:row.created_at
+    };});
+  var seen={};
+  return baseAlerts.concat(newsSource).filter(function(item){
+    var key=(item.date||'')+'|'+(item.alert_type||'')+'|'+(item.evidence||item.keyword||'');
+    if(seen[key])return false;
+    seen[key]=true;
     return true;
   });
 }
