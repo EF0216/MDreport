@@ -218,7 +218,7 @@
     <main>
       <section id="overview" class="dashboard-section active">
         <div class="section-heading"><h2>今日の重要アラート</h2><span id="alertCount" class="badge">0件</span></div>
-        <div class="mode-bar" id="overviewModeBar"></div>
+        <!-- 重要タブはデータが当日分のみのためモードバー非表示 -->
         <div id="todayAlerts" class="card-grid"></div>
         <div id="salesAlertSection" hidden>
           <div class="section-heading" style="margin-top:24px">
@@ -365,6 +365,6 @@
       <span>最終更新日時</span><strong id="updatedAt">-</strong>
     </footer>
   </div>
-  <script src="dashboard.js?v=20260516e"></script>
+  <script src="dashboard.js?v=20260516f"></script>
 </body>
 </html>
