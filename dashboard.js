@@ -147,7 +147,9 @@ function renderDashboard(data) {
     var ww=currentWeekWindow();
     if(ww){bumonRows=aggregateBumonPeriod(data.legwearBumon||[],ww.startDate,ww.endDate,ww.key).concat(aggregateBumonPeriod(data.legwearBumon||[],ww.compareStartDate,ww.compareEndDate,ww.compareKey));bumonDates=[ww.key];}
   }
-  renderSales(bumonRows, bumonDates, data.weatherLatest || []);
+  var _wLatest=data.weatherLatest||[];
+  var _wNat=buildNationalAvgWeather(_wLatest);
+  renderSales(bumonRows, bumonDates, _wNat?[_wNat].concat(_wLatest):_wLatest);
   renderCategory(data.legwearCategory || [], data.legwearDates || []);
   renderProductAnalysis(
     data.legwearCategory || [],
@@ -390,20 +392,30 @@ function renderWeather(items, trendItems, zoneOrder) {
   renderWeatherTrend(trendItems||[], allItems, zoneOrder||[]);
 }
 
+function buildNationalAvgTrend(trendItems) {
+  var dateMap={};
+  trendItems.forEach(function(i){if(!i.zone||i.zone==='全国平均')return;if(!dateMap[i.date])dateMap[i.date]=[];dateMap[i.date].push(i);});
+  return Object.keys(dateMap).map(function(date){var n=buildNationalAvgWeather(dateMap[date]);if(n)n.date=date;return n;}).filter(Boolean);
+}
+
 function renderWeatherTrend(trendItems, todayItems, zoneOrder) {
   var select = document.getElementById('weatherZoneSelect');
   var chart = document.getElementById('weatherTrendChart');
   if (!select||!chart) return;
-  var available = new Set(trendItems.map(function(i){return i.zone;}).filter(Boolean));
-  var zones = zoneOrder.filter(function(z){return available.has(z);}).concat(
-    [...available].filter(function(z){return !zoneOrder.includes(z);}).sort(function(a,b){return String(a).localeCompare(String(b),'ja');})
-  );
+  var natTrend=buildNationalAvgTrend(trendItems);
+  var allTrend=natTrend.concat(trendItems);
+  var available = new Set(allTrend.map(function(i){return i.zone;}).filter(Boolean));
+  var zones = ['全国平均'].concat(
+    zoneOrder.filter(function(z){return available.has(z)&&z!=='全国平均';}).concat(
+      [...available].filter(function(z){return !zoneOrder.includes(z)&&z!=='全国平均';}).sort(function(a,b){return String(a).localeCompare(String(b),'ja');})
+    )
+  ).filter(function(z){return available.has(z);});
   if (!zones.length) { select.innerHTML='<option>データなし</option>'; drawEmptyChart(chart,'天気データがまだありません'); return; }
   var preferred = (todayItems.find(function(i){return Number(i.max_temp||0)>=25;})||{zone:todayItems[0]&&todayItems[0].zone||zones[0]}).zone||zones[0];
-  var current = zones.includes(select.value) ? select.value : preferred;
+  var current = zones.includes(select.value) ? select.value : (zones.includes(preferred)?preferred:zones[0]);
   select.innerHTML = zones.map(function(z){return '<option value="'+escapeAttribute(z)+'"'+(z===current?' selected':'')+'>'+escapeHtml(z)+'</option>';}).join('');
-  select.onchange = function(){window.requestAnimationFrame(function(){drawWeatherChart(chart,trendItems,select.value);});};
-  window.requestAnimationFrame(function(){drawWeatherChart(chart,trendItems,select.value||current);});
+  select.onchange = function(){window.requestAnimationFrame(function(){drawWeatherChart(chart,allTrend,select.value);});};
+  window.requestAnimationFrame(function(){drawWeatherChart(chart,allTrend,select.value||current);});
 }
 
 function drawWeatherChart(chart, trendItems, zone) {
