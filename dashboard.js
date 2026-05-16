@@ -482,10 +482,16 @@ function renderSales(allRows, dates, weatherItems) {
     var makeCol=function(row){
       if(!row)return{budget:NaN,actual:NaN,ratio:NaN,ly:NaN,yoy:NaN,profit:NaN,grossRate:NaN,lyProfit:NaN,profitYoy:null};
       var actual=numberOrNaN(row['売上実績']);
+      var budget=numberOrNaN(row['売上予算']);
+      var ratio=numberOrNaN(row['達成率']);
+      if(Number.isNaN(ratio)&&!Number.isNaN(actual)&&!Number.isNaN(budget)&&budget)ratio=Math.round(actual/budget*1000)/10;
       var profit=grossProfitFromRow(row,'売上実績');
       var grossRate=!Number.isNaN(normalizePercentValue(row['荒利率']))?normalizePercentValue(row['荒利率']):grossMarginRate(profit,actual);
       var lyProfit=lastYearGrossProfitFromRow(row);
-      return{budget:numberOrNaN(row['売上予算']),actual:actual,ratio:numberOrNaN(row['達成率']),ly:numberOrNaN(row['前年同週同曜日実績']),yoy:numberOrNaN(row['前年比']),profit:profit,grossRate:grossRate,lyProfit:lyProfit,profitYoy:yoyRateValue(profit,lyProfit)};
+      var ly=numberOrNaN(row['前年同週同曜日実績']);
+      var yoy=numberOrNaN(row['前年比']);
+      if(Number.isNaN(yoy)&&!Number.isNaN(actual)&&!Number.isNaN(ly)&&ly)yoy=Math.round(actual/ly*1000)/10;
+      return{budget:budget,actual:actual,ratio:ratio,ly:ly,yoy:yoy,profit:profit,grossRate:grossRate,lyProfit:lyProfit,profitYoy:yoyRateValue(profit,lyProfit)};
     };
     var pctClass=function(v){return(v===null||Number.isNaN(Number(v)))?'':Number(v)>=100?'num-good':Number(v)>=95?'num-warn':'num-bad';};
     var colHtml=function(label,col){
