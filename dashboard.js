@@ -358,15 +358,36 @@ function renderTags(items) {
   }).join('');
 }
 // -- 気温タブ
+function buildNationalAvgWeather(items) {
+  var valid=items.filter(function(i){return i.zone&&i.zone!=='全国平均';});
+  if(!valid.length)return null;
+  var avgNum=function(key){var vals=valid.map(function(i){return numberOrNaN(i[key]);}).filter(function(v){return!Number.isNaN(v);});return vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:NaN;};
+  return{
+    date:valid[0].date,zone:'全国平均',area_name:'全国平均',
+    max_temp:Math.round(avgNum('max_temp')*10)/10,
+    min_temp:Math.round(avgNum('min_temp')*10)/10,
+    rain_mm:Math.round(avgNum('rain_mm')*10)/10,
+    temp_vs_last_week:Math.round(avgNum('temp_vs_last_week')*10)/10,
+    temp_vs_yesterday:Math.round(avgNum('temp_vs_yesterday')*10)/10,
+    temp_vs_last_year_same_weekday:Math.round(avgNum('temp_vs_last_year_same_weekday')*10)/10,
+    last_year_max_temp:Math.round(avgNum('last_year_max_temp')*10)/10,
+    last_year_min_temp:Math.round(avgNum('last_year_min_temp')*10)/10,
+    last_year_same_weekday_date:valid[0].last_year_same_weekday_date||'-',
+    weather_alert:'全国平均'
+  };
+}
+
 function renderWeather(items, trendItems, zoneOrder) {
-  renderCards('weatherCards', items, function(item) {
+  var national=buildNationalAvgWeather(items);
+  var allItems=national?[national].concat(items):items;
+  renderCards('weatherCards', allItems, function(item) {
     return '<article class="card"><div class="meta"><span>' + escapeHtml(item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
   });
   var tbody = document.getElementById('weatherTable');
-  tbody.innerHTML = items.map(function(item) {
+  tbody.innerHTML = allItems.map(function(item) {
     return '<tr><td>' + escapeHtml(item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
   }).join('');
-  renderWeatherTrend(trendItems||[], items, zoneOrder||[]);
+  renderWeatherTrend(trendItems||[], allItems, zoneOrder||[]);
 }
 
 function renderWeatherTrend(trendItems, todayItems, zoneOrder) {
