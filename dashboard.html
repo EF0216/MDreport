@@ -125,13 +125,15 @@
     .sales-gross-line { margin-top:6px; color:#425b76; font-size:12px; font-weight:700; }
     .sales-alert-main { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; margin-top:5px; font-size:12px; }
     .sales-main-name { color:#0f2740; font-weight:700; }
-    .sales-zone-subcats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; }
-    .sa-metrics { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px; margin:8px 0; }
-    .sa-mb { padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#f7fafd; }
-    .sa-mb-l { color:var(--muted); font-size:11px; font-weight:700; }
-    .sa-mb-v { font-size:15px; font-weight:800; margin-top:2px; }
-    .sa-temp { margin:8px 0; padding:10px 12px; background:#fff8eb; border:1px solid #f3cf8c; border-radius:6px; font-size:12px; font-weight:700; color:#4b3418; }
-    .sa-temp-detail { margin-top:4px; font-weight:400; color:#7a5c30; }
+    .sa-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin-top:8px; }
+    .sa-left { display:flex; flex-direction:column; gap:6px; }
+    .sales-zone-subcats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .sa-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin:0; }
+    .sa-mb { padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#f7fafd; }
+    .sa-mb-l { color:var(--muted); font-size:10px; font-weight:700; }
+    .sa-mb-v { font-size:13px; font-weight:800; margin-top:1px; }
+    .sa-temp { margin:0; padding:8px 10px; background:#fff8eb; border:1px solid #f3cf8c; border-radius:6px; font-size:11px; font-weight:700; color:#4b3418; }
+    .sa-temp-detail { margin-top:3px; font-weight:400; color:#7a5c30; font-size:11px; }
     .sales-zone-subcat-group { border-top:1px solid #d8e3ee; padding-top:8px; }
     .sales-zone-subcat-title { font-size:12px; font-weight:800; margin-bottom:4px; }
     .sales-subcat-list { display:grid; gap:4px; margin:0; padding-left:18px; font-size:12px; }
@@ -365,6 +367,6 @@
       <span>最終更新日時</span><strong id="updatedAt">-</strong>
     </footer>
   </div>
-  <script src="dashboard.js?v=20260516j"></script>
+  <script src="dashboard.js?v=20260516k"></script>
 </body>
 </html>
