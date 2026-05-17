@@ -129,7 +129,13 @@ function renderDashboard(data) {
   ['overviewModeBar','weatherModeBar','salesModeBar','categoryModeBar','newsModeBar'].forEach(renderModeBar);
 
   var _alerts=buildImportantAlerts(data);
-  if(state.dateMode==='weekly'){var _wwA=currentWeekWindow();if(_wwA)_alerts=_alerts.filter(function(a){return a.date>=_wwA.startDate&&a.date<=_wwA.endDate;});}
+  if(state.dateMode==='weekly'){
+    var _wwA=currentWeekWindow();
+    if(_wwA)_alerts=_alerts.filter(function(a){return a.date>=_wwA.startDate&&a.date<=_wwA.endDate;});
+  }else{
+    var _today=(data.weatherLatest&&data.weatherLatest[0]&&data.weatherLatest[0].date)||new Date().toISOString().slice(0,10);
+    _alerts=_alerts.filter(function(a){return a.date===_today;});
+  }
   renderTodayAlerts(_alerts);
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherLatest || []);
 
