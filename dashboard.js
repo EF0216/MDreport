@@ -136,16 +136,21 @@ function renderDashboard(data) {
     var _today=(data.weatherLatest&&data.weatherLatest[0]&&data.weatherLatest[0].date)||new Date().toISOString().slice(0,10);
     _alerts=_alerts.filter(function(a){return a.date===_today;});
   }
-  renderTodayAlerts(_alerts);
-  renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], data.weatherLatest || []);
-
   // 気温タブ: 週別モード対応
   var weatherItems=data.weatherLatest||[];
   var weatherTrendItems=data.weatherTrend||[];
+  var salesWeatherItems=weatherTrendItems.length?weatherTrendItems:weatherItems;
+  var salesAlertWeatherItems=weatherItems;
   if(state.dateMode==='weekly'){
     var wwW=currentWeekWindow();
-    if(wwW){weatherItems=weatherTrendItems.filter(function(r){return r.date>=wwW.startDate&&r.date<=wwW.endDate;});}
+    if(wwW){
+      weatherItems=aggregateWeatherPeriod(weatherTrendItems.length?weatherTrendItems:weatherItems,wwW.startDate,wwW.endDate,wwW.key,wwW.startDate+'～'+wwW.endDate,wwW.compareStartDate+'～'+wwW.compareEndDate,data.zoneOrder||[],wwW.compareStartDate,wwW.compareEndDate);
+      salesWeatherItems=weatherItems;
+      salesAlertWeatherItems=weatherItems;
+    }
   }
+  renderTodayAlerts(_alerts);
+  renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], salesAlertWeatherItems);
   renderWeather(weatherItems, weatherTrendItems, data.zoneOrder || []);
 
   // 売上タブ: 週別モード対応
@@ -155,9 +160,7 @@ function renderDashboard(data) {
     var ww=currentWeekWindow();
     if(ww){bumonRows=aggregateBumonPeriod(data.legwearBumon||[],ww.startDate,ww.endDate,ww.key).concat(aggregateBumonPeriod(data.legwearBumon||[],ww.compareStartDate,ww.compareEndDate,ww.compareKey));bumonDates=[ww.key];}
   }
-  var _wLatest=data.weatherLatest||[];
-  var _wNat=buildNationalAvgWeather(_wLatest);
-  renderSales(bumonRows, bumonDates, _wNat?[_wNat].concat(_wLatest):_wLatest);
+  renderSales(bumonRows, bumonDates, salesWeatherItems);
   renderCategory(data.legwearCategory || [], data.legwearDates || []);
   renderProductAnalysis(
     data.legwearCategory || [],
@@ -364,20 +367,131 @@ function renderTags(items) {
   }).join('');
 }
 // -- 気温タブ
+function sortWeatherRowsByZone(rows, zoneOrder) {
+  var ordered=zoneOrder&&zoneOrder.length?zoneOrder:ZONE_ORDER_NS;
+  return rows.slice().sort(function(a,b){
+    var ai=ordered.indexOf(a.zone),bi=ordered.indexOf(b.zone);
+    if(ai===-1&&bi===-1)return String(a.zone||'').localeCompare(String(b.zone||''),'ja');
+    if(ai===-1)return 1;
+    if(bi===-1)return -1;
+    return ai-bi;
+  });
+}
+
+function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,comparisonDate,zoneOrder,compareStartDate,compareEndDate) {
+  var rowAvgTemp=function(row){
+    var avg=numberOrNaN(row.avg_temp);
+    if(!Number.isNaN(avg))return avg;
+    var maxTemp=numberOrNaN(row.max_temp),minTemp=numberOrNaN(row.min_temp);
+    return Number.isNaN(maxTemp)||Number.isNaN(minTemp)?NaN:(maxTemp+minTemp)/2;
+  };
+  var rowLastYearAvgTemp=function(row){
+    var avg=numberOrNaN(row.last_year_avg_temp);
+    if(!Number.isNaN(avg))return avg;
+    var maxTemp=numberOrNaN(row.last_year_max_temp),minTemp=numberOrNaN(row.last_year_min_temp);
+    return Number.isNaN(maxTemp)||Number.isNaN(minTemp)?NaN:(maxTemp+minTemp)/2;
+  };
+  var average=function(values){return values.length?Math.round(values.reduce(function(sum,value){return sum+value;},0)/values.length*10)/10:'';};
+  var compareAvgByZone={};
+  if(compareStartDate&&compareEndDate){
+    var compareGroups={};
+    (rows||[]).filter(function(row){return row.date>=compareStartDate&&row.date<=compareEndDate;}).forEach(function(row){
+      var zone=row.zone||'';
+      var avg=rowAvgTemp(row);
+      if(!zone||Number.isNaN(avg))return;
+      if(!compareGroups[zone])compareGroups[zone]=[];
+      compareGroups[zone].push(avg);
+    });
+    Object.keys(compareGroups).forEach(function(zone){compareAvgByZone[zone]=average(compareGroups[zone]);});
+  }
+  var grouped={};
+  (rows||[]).filter(function(row){return row.date>=startDate&&row.date<=endDate;}).forEach(function(row){
+    var zone=row.zone||'';
+    if(!zone)return;
+    if(!grouped[zone]){
+      grouped[zone]={
+        date:dateKey,
+        display_date:displayDate||dateKey,
+        zone:zone,
+        area_name:row.area_name||zone,
+        max_temp:null,
+        min_temp:null,
+        rain_mm:0,
+        temp_vs_yesterday:'',
+        avg_temp_values:[],
+        temp_vs_last_week_values:[],
+        temp_vs_last_year_values:[],
+        last_year_avg_values:[],
+        last_year_max_temp:null,
+        last_year_min_temp:null,
+        last_year_same_weekday_date:comparisonDate||'',
+        weather_alerts:[]
+      };
+    }
+    var item=grouped[zone];
+    var maxTemp=numberOrNaN(row.max_temp);
+    var minTemp=numberOrNaN(row.min_temp);
+    var rain=numberOrNaN(row.rain_mm);
+    var avgTemp=rowAvgTemp(row);
+    var weekDiff=numberOrNaN(row.temp_vs_last_week);
+    var yearDiff=numberOrNaN(row.temp_vs_last_year_same_weekday);
+    var lyMax=numberOrNaN(row.last_year_max_temp);
+    var lyMin=numberOrNaN(row.last_year_min_temp);
+    var lyAvg=rowLastYearAvgTemp(row);
+    if(!Number.isNaN(maxTemp))item.max_temp=item.max_temp===null?maxTemp:Math.max(item.max_temp,maxTemp);
+    if(!Number.isNaN(minTemp))item.min_temp=item.min_temp===null?minTemp:Math.min(item.min_temp,minTemp);
+    if(!Number.isNaN(rain))item.rain_mm+=rain;
+    if(!Number.isNaN(avgTemp))item.avg_temp_values.push(avgTemp);
+    if(!Number.isNaN(weekDiff))item.temp_vs_last_week_values.push(weekDiff);
+    if(!Number.isNaN(yearDiff))item.temp_vs_last_year_values.push(yearDiff);
+    if(!Number.isNaN(lyAvg))item.last_year_avg_values.push(lyAvg);
+    if(!Number.isNaN(lyMax))item.last_year_max_temp=item.last_year_max_temp===null?lyMax:Math.max(item.last_year_max_temp,lyMax);
+    if(!Number.isNaN(lyMin))item.last_year_min_temp=item.last_year_min_temp===null?lyMin:Math.min(item.last_year_min_temp,lyMin);
+    if(row.weather_alert&&String(row.weather_alert).indexOf('通常観測')===-1)item.weather_alerts.push(row.weather_alert);
+  });
+  return sortWeatherRowsByZone(Object.values(grouped).map(function(item){
+    var avgTemp=average(item.avg_temp_values);
+    var lastWeekDiff=average(item.temp_vs_last_week_values);
+    var compareAvg=compareAvgByZone[item.zone];
+    if(lastWeekDiff===''&&avgTemp!==''&&typeof compareAvg!=='undefined'&&compareAvg!=='')lastWeekDiff=Math.round((avgTemp-compareAvg)*10)/10;
+    var lastYearDiff=average(item.temp_vs_last_year_values);
+    var lastYearAvg=average(item.last_year_avg_values);
+    if(lastYearDiff===''&&avgTemp!==''&&lastYearAvg!=='')lastYearDiff=Math.round((avgTemp-lastYearAvg)*10)/10;
+    return {
+      date:item.date,
+      display_date:item.display_date,
+      zone:item.zone,
+      area_name:item.area_name,
+      avg_temp:avgTemp,
+      max_temp:item.max_temp===null?'':item.max_temp,
+      min_temp:item.min_temp===null?'':item.min_temp,
+      rain_mm:Math.round(item.rain_mm*10)/10,
+      temp_vs_yesterday:'',
+      temp_vs_last_week:lastWeekDiff,
+      temp_vs_last_year_same_weekday:lastYearDiff,
+      last_year_max_temp:item.last_year_max_temp===null?'':item.last_year_max_temp,
+      last_year_min_temp:item.last_year_min_temp===null?'':item.last_year_min_temp,
+      last_year_same_weekday_date:item.last_year_same_weekday_date,
+      weather_alert:item.weather_alerts.length?[...new Set(item.weather_alerts)].slice(0,3).join(' / '):item.zone+'：通常観測'
+    };
+  }),zoneOrder||[]);
+}
+
 function buildNationalAvgWeather(items) {
   var valid=items.filter(function(i){return i.zone&&i.zone!=='全国平均';});
   if(!valid.length)return null;
   var avgNum=function(key){var vals=valid.map(function(i){return numberOrNaN(i[key]);}).filter(function(v){return!Number.isNaN(v);});return vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:NaN;};
+  var roundAvg=function(key){var value=avgNum(key);return Number.isNaN(value)?'':Math.round(value*10)/10;};
   return{
-    date:valid[0].date,zone:'全国平均',area_name:'全国平均',
-    max_temp:Math.round(avgNum('max_temp')*10)/10,
-    min_temp:Math.round(avgNum('min_temp')*10)/10,
-    rain_mm:Math.round(avgNum('rain_mm')*10)/10,
-    temp_vs_last_week:Math.round(avgNum('temp_vs_last_week')*10)/10,
-    temp_vs_yesterday:Math.round(avgNum('temp_vs_yesterday')*10)/10,
-    temp_vs_last_year_same_weekday:Math.round(avgNum('temp_vs_last_year_same_weekday')*10)/10,
-    last_year_max_temp:Math.round(avgNum('last_year_max_temp')*10)/10,
-    last_year_min_temp:Math.round(avgNum('last_year_min_temp')*10)/10,
+    date:valid[0].date,display_date:valid[0].display_date||valid[0].date,zone:'全国平均',area_name:'全国平均',
+    max_temp:roundAvg('max_temp'),
+    min_temp:roundAvg('min_temp'),
+    rain_mm:roundAvg('rain_mm'),
+    temp_vs_last_week:roundAvg('temp_vs_last_week'),
+    temp_vs_yesterday:roundAvg('temp_vs_yesterday'),
+    temp_vs_last_year_same_weekday:roundAvg('temp_vs_last_year_same_weekday'),
+    last_year_max_temp:roundAvg('last_year_max_temp'),
+    last_year_min_temp:roundAvg('last_year_min_temp'),
     last_year_same_weekday_date:valid[0].last_year_same_weekday_date||'-',
     weather_alert:'全国平均'
   };
@@ -387,11 +501,11 @@ function renderWeather(items, trendItems, zoneOrder) {
   var national=buildNationalAvgWeather(items);
   var allItems=national?[national].concat(items):items;
   renderCards('weatherCards', allItems, function(item) {
-    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
+    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.display_date||item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
   });
   var tbody = document.getElementById('weatherTable');
   tbody.innerHTML = allItems.map(function(item) {
-    return '<tr><td>' + escapeHtml(item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
+    return '<tr><td>' + escapeHtml(item.display_date||item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
   }).join('');
   renderWeatherTrend(trendItems||[], allItems, zoneOrder||[]);
 }
@@ -472,11 +586,16 @@ function renderSales(allRows, dates, weatherItems) {
   if(!dates.length){select.innerHTML='<option>データなし</option>';container.innerHTML='<div class="empty">売上データはまだありません。</div>';return;}
   select.innerHTML=dates.map(function(d){return'<option value="'+escapeAttribute(d)+'">'+escapeHtml(d)+'</option>';}).join('');
   var allWeatherItems=weatherItems||[];
-  var weatherByZoneAll={};
-  allWeatherItems.forEach(function(w){if(w.zone)weatherByZoneAll[w.zone]=w;});
+  var weatherByDateZone=function(date){
+    var rows=allWeatherItems.filter(function(w){return w.date===date;});
+    var national=buildNationalAvgWeather(rows);
+    var weatherByZone={};
+    (national?[national].concat(rows):rows).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
+    return weatherByZone;
+  };
   var renderForDate=function(date){
     var rows=allRows.filter(function(r){return r.date===date;});
-    var weatherByZone=weatherByZoneAll;
+    var weatherByZone=weatherByDateZone(date);
     if(!rows.length){container.innerHTML='<div class="empty">この日のデータはありません。</div>';return;}
     var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
     var totalRows=rows.filter(isAggr);
@@ -513,15 +632,16 @@ function renderSales(allRows, dates, weatherItems) {
     var tempColHtml=function(w){
       if(!w)return'<div class="zs-col"><div class="zs-col-head">気温</div><div class="zs-kpi" style="color:var(--muted);font-size:12px">データなし</div></div>';
       var hasLW=w.temp_vs_last_week!==''&&w.temp_vs_last_week!==null&&typeof w.temp_vs_last_week!=='undefined';
-      var diff=Number(hasLW?w.temp_vs_last_week:(w.temp_vs_yesterday||0));
-      var diffLY=Number(w.temp_vs_last_year_same_weekday||0);
-      var diffStr=(diff===0?'±':diff>0?'+':'')+diff.toFixed(1)+'℃';
-      var diffLYStr=(diffLY===0?'±':diffLY>0?'+':'')+diffLY.toFixed(1)+'℃';
+      var diff=numberOrNaN(hasLW?w.temp_vs_last_week:w.temp_vs_yesterday);
+      var diffLY=numberOrNaN(w.temp_vs_last_year_same_weekday);
+      var diffStr=Number.isNaN(diff)?'-':(diff===0?'±':diff>0?'+':'')+diff.toFixed(1)+'℃';
+      var diffLYStr=Number.isNaN(diffLY)?'-':(diffLY===0?'±':diffLY>0?'+':'')+diffLY.toFixed(1)+'℃';
       var diffCls=diff>0?'num-bad':diff<0?'num-good':'';
       var diffLYCls=diffLY>0?'num-bad':diffLY<0?'num-good':'';
+      var tempValue=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':n.toFixed(1)+'℃';};
       return '<div class="zs-col"><div class="zs-col-head">気温</div>'+
-        '<div class="zs-kpi"><span class="zs-kpi-l">最高</span><span class="zs-kpi-v">'+(w.max_temp!=null?Number(w.max_temp).toFixed(1)+'℃':'-')+'</span></div>'+
-        '<div class="zs-kpi"><span class="zs-kpi-l">最低</span><span class="zs-kpi-v">'+(w.min_temp!=null?Number(w.min_temp).toFixed(1)+'℃':'-')+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">最高</span><span class="zs-kpi-v">'+tempValue(w.max_temp)+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">最低</span><span class="zs-kpi-v">'+tempValue(w.min_temp)+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'前週差':'前日差')+'</span><span class="zs-kpi-v '+diffCls+'">'+diffStr+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v '+diffLYCls+'">'+diffLYStr+'</span></div>'+
         '</div>';
