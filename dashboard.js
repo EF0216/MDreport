@@ -1151,7 +1151,12 @@ function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks, compa
   var compForActive=function(){
     var w=currentWeekWindow();
     if(viewMode==='weekly'&&w)return{date:w.compareKey,displayDate:w.compareStartDate+'～'+w.compareEndDate,label:'前週累計',rateLabel:'前週累計比',diffLabel:'前週累計差'};
-    return pickComparisonDate(allDataDates,dateSelect.value);
+    var todayDate=dateSelect.value;
+    var prevDate7=shiftDateString(todayDate,-7);
+    if(allDataDates.indexOf(prevDate7)>=0){
+      return{date:prevDate7,label:'前週同曜日',rateLabel:'前週同曜日比',diffLabel:'前週同曜日差'};
+    }
+    return pickComparisonDate(allDataDates,todayDate);
   };
   var aggregatePeriod=function(startDate,endDate,dateKey){
     var map={};
