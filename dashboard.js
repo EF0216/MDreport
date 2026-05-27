@@ -102,7 +102,9 @@ function switchSection(sectionId) {
 async function loadDashboard() {
   setLoading(true, '読み込み中...');
   try {
-    const res = await fetch('./data/dashboard_data.json');
+    // cache busting: ブラウザ/CDN のキャッシュで古い JSON を掴まないよう、
+    // 毎回 URL を変えて取得する。GitHub Pages 側の更新を即時に反映するため。
+    const res = await fetch('./data/dashboard_data.json?t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error(`データ取得失敗 (${res.status})`);
     const data = await res.json();
     state.data = data;
