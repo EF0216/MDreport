@@ -365,6 +365,14 @@
       <span>最終更新日時</span><strong id="updatedAt">-</strong>
     </footer>
   </div>
-  <script src="dashboard.js?v=20260517a"></script>
+  <script>
+    // dashboard.js を動的に読み込み、毎回 URL を変えることでブラウザキャッシュを回避する。
+    // HTML 側のキャッシュは GitHub Pages の Cache-Control 任せだが、本体ロジックの dashboard.js は常に最新を取得する。
+    (function () {
+      var s = document.createElement('script');
+      s.src = 'dashboard.js?t=' + Date.now();
+      document.body.appendChild(s);
+    })();
+  </script>
 </body>
 </html>
