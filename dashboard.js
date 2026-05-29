@@ -141,7 +141,28 @@ function renderDashboard(data) {
   // 気温タブ: 週別モード対応
   var weatherItems=data.weatherLatest||[];
   var weatherTrendItems=data.weatherTrend||[];
-  var salesWeatherItems=weatherTrendItems.length?weatherTrendItems:weatherItems;
+  var weatherDailyItems=data.weatherDaily||[];
+  // weatherTrend には temp_vs_yesterday / temp_vs_last_week / temp_vs_last_year_same_weekday が
+  // 含まれていないため、weatherDaily の同日同ゾーンの値で補完して売上タブ用 weather にする。
+  var enrichWithDaily=(function(){
+    var dailyMap={};
+    weatherDailyItems.forEach(function(w){if(w.date&&w.zone)dailyMap[w.date+'|'+w.zone]=w;});
+    return function(trend){
+      return (trend||[]).map(function(t){
+        var d=dailyMap[(t.date||'')+'|'+(t.zone||'')];
+        if(!d)return t;
+        var pick=function(tv,dv){return(tv!==undefined&&tv!==null&&tv!=='')?tv:dv;};
+        return Object.assign({},t,{
+          temp_vs_yesterday:pick(t.temp_vs_yesterday,d.temp_vs_yesterday),
+          temp_vs_last_week:pick(t.temp_vs_last_week,d.temp_vs_last_week),
+          temp_vs_last_year_same_weekday:pick(t.temp_vs_last_year_same_weekday,d.temp_vs_last_year_same_weekday),
+          last_year_same_weekday_date:t.last_year_same_weekday_date||d.last_year_same_weekday_date,
+          weather_alert:t.weather_alert||d.weather_alert
+        });
+      });
+    };
+  })();
+  var salesWeatherItems=weatherTrendItems.length?enrichWithDaily(weatherTrendItems):weatherItems;
   var salesAlertWeatherItems=weatherItems;
   if(state.dateMode==='weekly'){
     var wwW=currentWeekWindow();
