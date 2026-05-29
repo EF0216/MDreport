@@ -322,15 +322,36 @@ function formatNum(value) {
 function renderTodayAlerts(items) {
   const sorted = sortByImportance(items);
   const groupMap = {};
+  // ニュース反応はキーワード違いで同じニュースが重複しやすいので、
+  // evidence（タイトル）単位で横断統合する。それ以外は keyword + alert_type で従来通り。
+  // タイトル末尾のソース表記など揺れに耐えるため、記号・空白を除去した先頭30字をキーにする。
+  const normalizeNewsEvidence = ev => String(ev||'')
+    .replace(/\s+/g,'')
+    .replace(/[「」『』（）()\[\]【】]/g,'')
+    .replace(/[ー〜～~・\-—–.,。、:：;；!！?？"'"'"]/g,'')
+    .toLowerCase()
+    .slice(0,30);
   sorted.forEach(item => {
-    const key = item.keyword + '||' + (item.alert_type||'');
-    if (!groupMap[key]) groupMap[key] = Object.assign({}, item, {_evidences:[]});
+    const isNews = (item.alert_type||'') === 'ニュース反応';
+    const key = isNews
+      ? 'news||' + normalizeNewsEvidence(item.evidence)
+      : item.keyword + '||' + (item.alert_type||'');
+    if (!groupMap[key]) groupMap[key] = Object.assign({}, item, {_evidences:[], _keywords:[]});
     groupMap[key]._evidences.push(item.evidence);
+    if (item.keyword && groupMap[key]._keywords.indexOf(item.keyword) < 0) {
+      groupMap[key]._keywords.push(item.keyword);
+    }
   });
   const consolidated = Object.values(groupMap).map(g => {
     const base = Object.assign({}, g);
-    if (g._evidences.length === 1) { base.evidence = g._evidences[0]; }
-    else {
+    const isNews = (g.alert_type||'') === 'ニュース反応';
+    if (isNews) {
+      // ニュースは evidence で統合済み（1件のみ）。複数キーワードは併記
+      base.evidence = g._evidences[0];
+      if (g._keywords.length > 1) base.keyword = g._keywords.join(' / ');
+    } else if (g._evidences.length === 1) {
+      base.evidence = g._evidences[0];
+    } else {
       const shown = g._evidences.slice(0,5);
       const rest = g._evidences.length - shown.length;
       base.evidence = shown.join(' / ') + (rest > 0 ? ' 他'+rest+'件' : '');
@@ -340,7 +361,7 @@ function renderTodayAlerts(items) {
   const display = consolidated.slice(0,12);
   document.getElementById('alertCount').textContent = display.length + '件';
   renderCards('todayAlerts', display, function(item) {
-    return '<article class="card important"><div class="meta"><span>' + escapeHtml(item.date) + '</span><span>' + escapeHtml(item.category) + '</span><span class="importance">重要度 ' + escapeHtml(item.importance) + '</span></div><div class="card-title">' + escapeHtml(item.evidence) + '</div><div>' + escapeHtml(item.sales_check_point) + '</div><div class="action">' + escapeHtml(item.action) + '</div></article>';
+    return '<article class="card important"><div class="meta"><span>' + escapeHtml(item.date) + '</span><span>' + escapeHtml(item.category) + '</span><span>' + escapeHtml(item.keyword||'') + '</span><span class="importance">重要度 ' + escapeHtml(item.importance) + '</span></div><div class="card-title">' + escapeHtml(item.evidence) + '</div><div>' + escapeHtml(item.sales_check_point) + '</div><div class="action">' + escapeHtml(item.action) + '</div></article>';
   });
 }
 
