@@ -85,13 +85,20 @@ function aggregateBumonPeriod(rows,startDate,endDate,dateKey){
 }
 
 // ── 初期化 ───────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+function _bootstrapDashboard() {
   document.getElementById('reloadButton').addEventListener('click', loadDashboard);
   document.querySelectorAll('.tab').forEach(btn => {
     btn.addEventListener('click', () => switchSection(btn.dataset.section));
   });
   loadDashboard();
-});
+}
+// dashboard.html 側で動的 script 注入しているため、本スクリプトが評価される時点で
+// 既に DOMContentLoaded が発火済みのケースがある。readyState で分岐する。
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _bootstrapDashboard);
+} else {
+  _bootstrapDashboard();
+}
 
 function switchSection(sectionId) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.section === sectionId));
