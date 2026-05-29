@@ -1017,7 +1017,8 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   subcatUpDown.forEach(function(s){
     alerts.push({type:s.diff>0?'subcat_up':'subcat_down',
       部門名:s.bumonName,カテゴリ名:s.category,サブカテ名:s.subcategory,
-      pct:s.pct,diff:s.diff,todayAmt:s.todayAmt,prevAmt:s.prevAmt,yoy:s.yoy,profitAmt:s.profitAmt,profitLyAmt:s.profitLyAmt,
+      pct:s.pct,diff:s.diff,todayAmt:s.todayAmt,prevAmt:s.prevAmt,
+      lyAmt:s.lyAmt,hasLy:s.hasLy,yoy:s.yoy,profitAmt:s.profitAmt,profitLyAmt:s.profitLyAmt,
       grossRate:s.grossRate,profitYoy:s.profitYoy,goodZones:s.goodZones,badZones:s.badZones,avgTempDiff:avgTempDiff,
       todayD:todayD,prevD:prevD,compareLabel:comparison.label,compareRateLabel:comparison.rateLabel,compareDiffLabel:comparison.diffLabel});
   });
@@ -1096,10 +1097,14 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     if(!isZone){
       var mb=function(lbl,val,cls2){return'<div class="sa-mb"><div class="sa-mb-l">'+escapeHtml(lbl)+'</div><div class="sa-mb-v '+(cls2||'')+'">'+val+'</div></div>';};
       var scPct=a.pct===null?'-':(a.pct>=0?'+':'')+a.pct.toFixed(1)+'%';
+      var yoyDiff=a.hasLy?Number(a.todayAmt||0)-Number(a.lyAmt||0):null;
+      var yoyDiffCls=yoyDiff===null?'':(yoyDiff>=0?'num-good':'num-bad');
       subcatMetrics='<div class="sa-metrics">'+
         mb('実績',fY(a.todayAmt))+
         mb('前週同曜日差',fD(a.diff),isUp?'num-good':'num-bad')+
         mb('前週同曜日比',scPct,isUp?'num-good':'num-bad')+
+        mb('前年同週同曜日',a.hasLy?fY(a.lyAmt):'-')+
+        mb('売上昨対差',yoyDiff===null?'-':fD(yoyDiff),yoyDiffCls)+
         mb('前年比',fR(a.yoy),rCls(a.yoy))+
         mb('荒利',fY(a.profitAmt))+
         mb('粗利率',fR(a.grossRate))+
