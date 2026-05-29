@@ -197,7 +197,9 @@ function renderDashboard(data) {
     data.legwearCurrentWeekDates || data.legwearDates || [],
     data.weatherTrend || [],
     data.legwearWeeks || [],
-    data.legwearDates || []
+    // 7日前(前週同曜日)の比較対象判定に使うため、今週分の legwearDates ではなく
+    // 直近全日付を持つ legwearAllDates を渡す。
+    data.legwearAllDates || data.legwearDates || []
   );
 
   // ニュースタブ: 週別モード対応
