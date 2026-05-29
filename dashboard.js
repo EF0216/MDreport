@@ -84,6 +84,25 @@ function aggregateBumonPeriod(rows,startDate,endDate,dateKey){
   return Object.values(map);
 }
 
+// カテゴリ/サブカテ単位の期間集計（週別モードのカテゴリタブ用）
+function aggregateCategoryPeriod(rows,startDate,endDate,dateKey){
+  var map={};
+  rows.filter(function(r){return r.date>=startDate&&r.date<=endDate;}).forEach(function(r){
+    var key=[String(r.zone_code||''),r.zone_name||'',String(r['部門CD']||''),r['部門名']||'',String(r['カテゴリCD']||''),r['カテゴリ名']||'',String(r['サブカテCD']||''),r['サブカテ名']||''].join('|');
+    if(!map[key])map[key]=Object.assign({},r,{date:dateKey,'実績数量':0,'実績金額':0,'前年同週同曜日数量':0,'前年同週同曜日実績':0,'販売荒利高':0,'前年荒利高':0,'昨年対比':null,'荒利率':null,_hasLy:false,_hasProfit:false,_hasLyProfit:false});
+    map[key]['実績数量']+=Number(r['実績数量']||0);
+    map[key]['実績金額']+=Number(r['実績金額']||0);
+    if(r['前年同週同曜日実績']!==''&&r['前年同週同曜日実績']!==null){
+      map[key]['前年同週同曜日実績']+=Number(r['前年同週同曜日実績']||0);
+      map[key]['前年同週同曜日数量']+=Number(r['前年同週同曜日数量']||0);
+      map[key]._hasLy=true;
+    }
+    var p=grossProfitFromRow(r,'実績金額');if(!Number.isNaN(p)){map[key]['販売荒利高']+=p;map[key]._hasProfit=true;}
+    var lp=lastYearGrossProfitFromRow(r);if(!Number.isNaN(lp)){map[key]['前年荒利高']+=lp;map[key]._hasLyProfit=true;}
+  });
+  return Object.values(map);
+}
+
 // ── 初期化 ───────────────────────────────────────────────────
 function _bootstrapDashboard() {
   document.getElementById('reloadButton').addEventListener('click', loadDashboard);
@@ -191,7 +210,19 @@ function renderDashboard(data) {
     if(ww){bumonRows=aggregateBumonPeriod(data.legwearBumon||[],ww.startDate,ww.endDate,ww.key).concat(aggregateBumonPeriod(data.legwearBumon||[],ww.compareStartDate,ww.compareEndDate,ww.compareKey));bumonDates=[ww.key];}
   }
   renderSales(bumonRows, bumonDates, salesWeatherItems);
-  renderCategory(data.legwearCategory || [], data.legwearDates || []);
+  // カテゴリタブ: 週別モード対応（売上タブと同パターン）
+  var catRows=data.legwearCategory||[];
+  var catDates=data.legwearDates||[];
+  if(state.dateMode==='weekly'){
+    var wwC=currentWeekWindow();
+    if(wwC){
+      catRows=aggregateCategoryPeriod(data.legwearCategory||[],wwC.startDate,wwC.endDate,wwC.key)
+        .concat(aggregateCategoryPeriod(data.legwearCategory||[],wwC.compareStartDate,wwC.compareEndDate,wwC.compareKey));
+      // 7日前 (=compareKey) を含めることで renderCategory 内の pickComparisonDate が前週累計比較を選べる
+      catDates=[wwC.key,wwC.compareKey];
+    }
+  }
+  renderCategory(catRows, catDates);
   renderProductAnalysis(
     data.legwearCategory || [],
     data.legwearCurrentWeekDates || data.legwearDates || [],
