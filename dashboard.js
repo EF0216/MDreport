@@ -84,10 +84,13 @@ function aggregateBumonPeriod(rows,startDate,endDate,dateKey){
   return Object.values(map);
 }
 
-// カテゴリ/サブカテ単位の期間集計（週別モードのカテゴリタブ用）
-function aggregateCategoryPeriod(rows,startDate,endDate,dateKey){
+// カテゴリ/サブカテ単位の集計（任意の日付セット）
+// 週別モードで「当週4日なら前週も4日(同曜日)」と公平比較するため、
+// 期間 (startDate-endDate) ではなく日付の列挙で集計する。
+function aggregateCategoryByDates(rows,allowedDates,dateKey){
+  var allow={};(allowedDates||[]).forEach(function(d){if(d)allow[d]=true;});
   var map={};
-  rows.filter(function(r){return r.date>=startDate&&r.date<=endDate;}).forEach(function(r){
+  rows.filter(function(r){return allow[r.date];}).forEach(function(r){
     var key=[String(r.zone_code||''),r.zone_name||'',String(r['部門CD']||''),r['部門名']||'',String(r['カテゴリCD']||''),r['カテゴリ名']||'',String(r['サブカテCD']||''),r['サブカテ名']||''].join('|');
     if(!map[key])map[key]=Object.assign({},r,{date:dateKey,'実績数量':0,'実績金額':0,'前年同週同曜日数量':0,'前年同週同曜日実績':0,'販売荒利高':0,'前年荒利高':0,'昨年対比':null,'荒利率':null,_hasLy:false,_hasProfit:false,_hasLyProfit:false});
     map[key]['実績数量']+=Number(r['実績数量']||0);
@@ -210,15 +213,20 @@ function renderDashboard(data) {
     if(ww){bumonRows=aggregateBumonPeriod(data.legwearBumon||[],ww.startDate,ww.endDate,ww.key).concat(aggregateBumonPeriod(data.legwearBumon||[],ww.compareStartDate,ww.compareEndDate,ww.compareKey));bumonDates=[ww.key];}
   }
   renderSales(bumonRows, bumonDates, salesWeatherItems);
-  // カテゴリタブ: 週別モード対応（売上タブと同パターン）
+  // カテゴリタブ: 週別モード対応
+  // 公平比較のため、当週でデータがある日付に対して、前週の同曜日のみを比較対象にする
+  // 例: 当週が月火水木の4日なら、前週も月火水木の4日で集計（曜日数を揃える）
   var catRows=data.legwearCategory||[];
   var catDates=data.legwearDates||[];
   if(state.dateMode==='weekly'){
     var wwC=currentWeekWindow();
     if(wwC){
-      catRows=aggregateCategoryPeriod(data.legwearCategory||[],wwC.startDate,wwC.endDate,wwC.key)
-        .concat(aggregateCategoryPeriod(data.legwearCategory||[],wwC.compareStartDate,wwC.compareEndDate,wwC.compareKey));
-      // 7日前 (=compareKey) を含めることで renderCategory 内の pickComparisonDate が前週累計比較を選べる
+      var currentActualDates=[...new Set((data.legwearCategory||[])
+        .filter(function(r){return r.date>=wwC.startDate&&r.date<=wwC.endDate;})
+        .map(function(r){return r.date;}))].sort();
+      var correspondingPrevDates=currentActualDates.map(function(d){return shiftDateString(d,-7);});
+      catRows=aggregateCategoryByDates(data.legwearCategory||[],currentActualDates,wwC.key)
+        .concat(aggregateCategoryByDates(data.legwearCategory||[],correspondingPrevDates,wwC.compareKey));
       catDates=[wwC.key,wwC.compareKey];
     }
   }
