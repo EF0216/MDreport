@@ -775,27 +775,34 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   var countBadge=document.getElementById('salesAlertCount');
   if(!section)return;
   var dates=[...new Set(bumonRows.map(function(r){return r.date;}).filter(Boolean))].sort().reverse();
+  var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
+  var hasAmount=function(row,key){var n=Number(row[key]||0);return !Number.isNaN(n)&&Math.abs(n)>0;};
+  // 予算だけ先に入った未確定日を重要タブの売上比較対象にしない。
+  var salesDates=dates.filter(function(date){
+    return bumonRows.some(function(r){return r.date===date&&!isAggr(r)&&hasAmount(r,'売上実績');})||
+      (categoryRows||[]).some(function(r){return r.date===date&&!isAggr(r)&&hasAmount(r,'実績金額');});
+  });
+  var comparisonDates=salesDates.length?salesDates:dates;
   var currentDates,prevDates,todayD,prevD,comparison;
   if(state.dateMode==='weekly'){
     var _ww=currentWeekWindow();
     if(!_ww){section.hidden=true;return;}
     var _pw=state.weekWindows.find(function(w){return w.key===_ww.compareKey;});
-    currentDates=dates.filter(function(d){return d>=_ww.startDate&&d<=_ww.endDate;});
+    currentDates=comparisonDates.filter(function(d){return d>=_ww.startDate&&d<=_ww.endDate;});
     // 当週と同じ曜日（7日前）だけを前週の比較対象にする
     var _correspondingPrev=currentDates.map(function(d){var dt=new Date(d);dt.setDate(dt.getDate()-7);return dt.toISOString().slice(0,10);});
-    prevDates=dates.filter(function(d){return _correspondingPrev.includes(d);});
+    prevDates=comparisonDates.filter(function(d){return _correspondingPrev.includes(d);});
     if(!currentDates.length){section.hidden=true;return;}
     todayD=_ww.endDate;prevD=_pw?_pw.endDate:'';
     comparison={label:_ww.label+' vs 前週同曜日',rateLabel:'前週同曜日比',diffLabel:'前週同曜日差'};
   }else{
-    if(dates.length<2){section.hidden=true;return;}
-    todayD=dates[0];
-    comparison=pickComparisonDate(dates,todayD);
+    if(comparisonDates.length<2){section.hidden=true;return;}
+    todayD=comparisonDates[0];
+    comparison=pickComparisonDate(comparisonDates,todayD);
     prevD=comparison.date;
     if(!prevD){section.hidden=true;return;}
     currentDates=[todayD];prevDates=[prevD];
   }
-  var isAggr=function(r){return String(r.zone_code||'').padStart(4,'0')==='0000'||r.zone_name==='全社計';};
 
   // weatherByZone（日付フィルタなし、GAS版に準拠）
   var weatherByZone={};
@@ -1095,7 +1102,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     return'<article class="card">'+
       '<div class="meta"><span>'+escapeHtml(a.todayD)+'</span><span>'+(isZone?'ゾーン':'サブカテゴリ')+'</span><span class="'+cls+'" style="font-weight:800">'+arrow+' '+label+'</span></div>'+
       '<div class="card-title">'+title+'</div>'+
-      (isZone?'<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(a.prev)+' → 本日 '+fY(a.today)+' / 予算 '+fY(a.budgetTotal)+' / 前年同週 '+fY(a.lyTotal)+'</div>'+grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy)+judgment+bumonBreakdown+(a.tempNote?'<div class="action" style="font-size:12px;margin-top:6px">🌡️ '+escapeHtml(a.tempNote)+'</div>':''):subcatMetrics+subcatTempBlock+subcatZoneBlock)+
+      (isZone?'<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(a.prev)+' → 対象日 '+fY(a.today)+' / 予算 '+fY(a.budgetTotal)+' / 前年同週 '+fY(a.lyTotal)+'</div>'+grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy)+judgment+bumonBreakdown+(a.tempNote?'<div class="action" style="font-size:12px;margin-top:6px">🌡️ '+escapeHtml(a.tempNote)+'</div>':''):subcatMetrics+subcatTempBlock+subcatZoneBlock)+
       '</article>';
   }).join('');
 }
