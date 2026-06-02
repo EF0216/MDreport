@@ -185,6 +185,8 @@ function renderDashboard(data) {
           temp_vs_yesterday:pick(t.temp_vs_yesterday,d.temp_vs_yesterday),
           temp_vs_last_week:pick(t.temp_vs_last_week,d.temp_vs_last_week),
           temp_vs_last_year_same_weekday:pick(t.temp_vs_last_year_same_weekday,d.temp_vs_last_year_same_weekday),
+          last_year_rain_mm:pick(t.last_year_rain_mm,d.last_year_rain_mm),
+          rain_vs_last_year_same_weekday:pick(t.rain_vs_last_year_same_weekday,d.rain_vs_last_year_same_weekday),
           last_year_same_weekday_date:t.last_year_same_weekday_date||d.last_year_same_weekday_date,
           weather_alert:t.weather_alert||d.weather_alert
         });
@@ -485,16 +487,26 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
   };
   var average=function(values){return values.length?Math.round(values.reduce(function(sum,value){return sum+value;},0)/values.length*10)/10:'';};
   var compareAvgByZone={};
+  var compareRainByZone={};
   if(compareStartDate&&compareEndDate){
     var compareGroups={};
+    var compareRainGroups={};
     (rows||[]).filter(function(row){return row.date>=compareStartDate&&row.date<=compareEndDate;}).forEach(function(row){
       var zone=row.zone||'';
+      if(!zone)return;
       var avg=rowAvgTemp(row);
-      if(!zone||Number.isNaN(avg))return;
-      if(!compareGroups[zone])compareGroups[zone]=[];
-      compareGroups[zone].push(avg);
+      if(!Number.isNaN(avg)){
+        if(!compareGroups[zone])compareGroups[zone]=[];
+        compareGroups[zone].push(avg);
+      }
+      var rainVal=numberOrNaN(row.rain_mm);
+      if(!Number.isNaN(rainVal)){
+        if(typeof compareRainGroups[zone]==='undefined')compareRainGroups[zone]=0;
+        compareRainGroups[zone]+=rainVal;
+      }
     });
     Object.keys(compareGroups).forEach(function(zone){compareAvgByZone[zone]=average(compareGroups[zone]);});
+    Object.keys(compareRainGroups).forEach(function(zone){compareRainByZone[zone]=Math.round(compareRainGroups[zone]*10)/10;});
   }
   var grouped={};
   (rows||[]).filter(function(row){return row.date>=startDate&&row.date<=endDate;}).forEach(function(row){
@@ -556,6 +568,8 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
     var thisYearRain=Math.round(item.rain_mm*10)/10;
     var lastYearRain=item.last_year_rain_values.length?Math.round(item.last_year_rain_values.reduce(function(sum,value){return sum+value;},0)*10)/10:'';
     var rainVsLastYear=lastYearRain===''?'':Math.round((thisYearRain-lastYearRain)*10)/10;
+    var compareRain=compareRainByZone[item.zone];
+    var rainVsLastWeek=(typeof compareRain!=='undefined'&&compareRain!=='')?Math.round((thisYearRain-compareRain)*10)/10:'';
     return {
       date:item.date,
       display_date:item.display_date,
@@ -565,6 +579,7 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
       max_temp:item.max_temp===null?'':item.max_temp,
       min_temp:item.min_temp===null?'':item.min_temp,
       rain_mm:thisYearRain,
+      rain_vs_last_week:rainVsLastWeek,
       temp_vs_yesterday:'',
       temp_vs_last_week:lastWeekDiff,
       temp_vs_last_year_same_weekday:lastYearDiff,
@@ -595,6 +610,7 @@ function buildNationalAvgWeather(items) {
     last_year_min_temp:roundAvg('last_year_min_temp'),
     last_year_rain_mm:roundAvg('last_year_rain_mm'),
     rain_vs_last_year_same_weekday:roundAvg('rain_vs_last_year_same_weekday'),
+    rain_vs_last_week:roundAvg('rain_vs_last_week'),
     last_year_same_weekday_date:valid[0].last_year_same_weekday_date||'-',
     weather_alert:'全国平均'
   };
@@ -750,11 +766,20 @@ function renderSales(allRows, dates, weatherItems) {
       var diffCls=diff>0?'num-bad':diff<0?'num-good':'';
       var diffLYCls=diffLY>0?'num-bad':diffLY<0?'num-good':'';
       var tempValue=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':n.toFixed(1)+'℃';};
+      // 降水量（雨は多いほど客足に不利なため、+を num-bad / -を num-good で着色）
+      var rainVal=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':n.toFixed(1)+'mm';};
+      var rainDiffStr=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':(n===0?'±':n>0?'+':'')+n.toFixed(1)+'mm';};
+      var rainDiffCls=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'':n>0?'num-bad':n<0?'num-good':'';};
+      var rainVsLW=w.rain_vs_last_week;
+      var rainVsLY=w.rain_vs_last_year_same_weekday;
       return '<div class="zs-col"><div class="zs-col-head">気温</div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">最高</span><span class="zs-kpi-v">'+tempValue(w.max_temp)+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">最低</span><span class="zs-kpi-v">'+tempValue(w.min_temp)+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'前週差':'前日差')+'</span><span class="zs-kpi-v '+diffCls+'">'+diffStr+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v '+diffLYCls+'">'+diffLYStr+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">降水量</span><span class="zs-kpi-v">'+rainVal(w.rain_mm)+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">降水前週差</span><span class="zs-kpi-v '+rainDiffCls(rainVsLW)+'">'+rainDiffStr(rainVsLW)+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">降水前年差</span><span class="zs-kpi-v '+rainDiffCls(rainVsLY)+'">'+rainDiffStr(rainVsLY)+'</span></div>'+
         '</div>';
     };
     container.innerHTML='<div class="zs-grid">'+allZones.map(function(z){
