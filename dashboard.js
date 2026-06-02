@@ -514,6 +514,7 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
         temp_vs_last_week_values:[],
         temp_vs_last_year_values:[],
         last_year_avg_values:[],
+        last_year_rain_values:[],
         last_year_max_temp:null,
         last_year_min_temp:null,
         last_year_same_weekday_date:comparisonDate||'',
@@ -530,9 +531,11 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
     var lyMax=numberOrNaN(row.last_year_max_temp);
     var lyMin=numberOrNaN(row.last_year_min_temp);
     var lyAvg=rowLastYearAvgTemp(row);
+    var lyRain=numberOrNaN(row.last_year_rain_mm);
     if(!Number.isNaN(maxTemp))item.max_temp=item.max_temp===null?maxTemp:Math.max(item.max_temp,maxTemp);
     if(!Number.isNaN(minTemp))item.min_temp=item.min_temp===null?minTemp:Math.min(item.min_temp,minTemp);
     if(!Number.isNaN(rain))item.rain_mm+=rain;
+    if(!Number.isNaN(lyRain))item.last_year_rain_values.push(lyRain);
     if(!Number.isNaN(avgTemp))item.avg_temp_values.push(avgTemp);
     if(!Number.isNaN(weekDiff))item.temp_vs_last_week_values.push(weekDiff);
     if(!Number.isNaN(yearDiff))item.temp_vs_last_year_values.push(yearDiff);
@@ -549,6 +552,10 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
     var lastYearDiff=average(item.temp_vs_last_year_values);
     var lastYearAvg=average(item.last_year_avg_values);
     if(lastYearDiff===''&&avgTemp!==''&&lastYearAvg!=='')lastYearDiff=Math.round((avgTemp-lastYearAvg)*10)/10;
+    // 降水量は週合計で扱うため、昨年降水量も同週合計で集計し、前年差はその合計同士の差にする。
+    var thisYearRain=Math.round(item.rain_mm*10)/10;
+    var lastYearRain=item.last_year_rain_values.length?Math.round(item.last_year_rain_values.reduce(function(sum,value){return sum+value;},0)*10)/10:'';
+    var rainVsLastYear=lastYearRain===''?'':Math.round((thisYearRain-lastYearRain)*10)/10;
     return {
       date:item.date,
       display_date:item.display_date,
@@ -557,12 +564,14 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
       avg_temp:avgTemp,
       max_temp:item.max_temp===null?'':item.max_temp,
       min_temp:item.min_temp===null?'':item.min_temp,
-      rain_mm:Math.round(item.rain_mm*10)/10,
+      rain_mm:thisYearRain,
       temp_vs_yesterday:'',
       temp_vs_last_week:lastWeekDiff,
       temp_vs_last_year_same_weekday:lastYearDiff,
       last_year_max_temp:item.last_year_max_temp===null?'':item.last_year_max_temp,
       last_year_min_temp:item.last_year_min_temp===null?'':item.last_year_min_temp,
+      last_year_rain_mm:lastYearRain,
+      rain_vs_last_year_same_weekday:rainVsLastYear,
       last_year_same_weekday_date:item.last_year_same_weekday_date,
       weather_alert:item.weather_alerts.length?[...new Set(item.weather_alerts)].slice(0,3).join(' / '):item.zone+'：通常観測'
     };

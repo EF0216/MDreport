@@ -87,6 +87,7 @@ context.window.__dashboardTest.renderDashboard({
       max_temp: 24.1,
       min_temp: 11.2,
       rain_mm: 1,
+      last_year_rain_mm: 0.5,
       temp_vs_last_week: 2.1,
       temp_vs_last_year_same_weekday: 0.4
     },
@@ -97,6 +98,7 @@ context.window.__dashboardTest.renderDashboard({
       max_temp: 30.0,
       min_temp: 10.1,
       rain_mm: 2,
+      last_year_rain_mm: 1.5,
       temp_vs_last_week: 4.1,
       temp_vs_last_year_same_weekday: 1.4
     }
@@ -116,3 +118,7 @@ assert(hokkaido, 'renderSales should receive selected-week weather for 北海道
 assert.strictEqual(hokkaido.max_temp, 30.0);
 assert.strictEqual(hokkaido.min_temp, 10.1);
 assert.strictEqual(hokkaido.temp_vs_last_week, 3.1);
+// 週別の降水量: 今年合計 1+2=3、昨年合計 0.5+1.5=2、前年差 +1
+assert.strictEqual(hokkaido.rain_mm, 3);
+assert.strictEqual(hokkaido.last_year_rain_mm, 2);
+assert.strictEqual(hokkaido.rain_vs_last_year_same_weekday, 1);
