@@ -1573,23 +1573,31 @@ function renderStoreSales(dailyRows, subcatRows, dates) {
       <div class="zs-kpi"><span class="zs-kpi-l">粗利率</span><span class="zs-kpi-v">${Number.isNaN(col.grossRate) ? '-' : col.grossRate.toFixed(1) + '%'}</span></div>
       <div class="zs-kpi"><span class="zs-kpi-l">荒利前年比</span><span class="zs-kpi-v ${pctClass(col.profitYoy)}">${col.profitYoy === null || Number.isNaN(Number(col.profitYoy)) ? '-' : Number(col.profitYoy).toFixed(1) + '%'}</span></div>
     </div>`;
-  const tempColHtml = (wt) => {
-    if (!wt) return '';
-    const maxT = numberOrNaN(wt.max_temp);
-    if (Number.isNaN(maxT)) return '';
-    const minT = numberOrNaN(wt.min_temp);
-    const wd = numberOrNaN(wt.temp_vs_last_week);
-    const yd = numberOrNaN(wt.temp_vs_last_year_same_weekday);
-    const diffStr = (n) => Number.isNaN(n) ? '-' : (n === 0 ? '±' : n > 0 ? '+' : '') + n.toFixed(1) + '℃';
-    const diffCls = (n) => Number.isNaN(n) ? '' : n > 0 ? 'num-bad' : n < 0 ? 'num-good' : '';
-    return `
-      <div class="zs-col">
-        <div class="zs-col-head">気温</div>
-        <div class="zs-kpi"><span class="zs-kpi-l ${tempCompareClass(wt.max_temp, wt.last_year_max_temp)}">最高</span><span class="zs-kpi-v">${maxT.toFixed(1)}℃</span></div>
-        <div class="zs-kpi"><span class="zs-kpi-l ${tempCompareClass(wt.min_temp, wt.last_year_min_temp)}">最低</span><span class="zs-kpi-v">${Number.isNaN(minT) ? '-' : minT.toFixed(1) + '℃'}</span></div>
-        <div class="zs-kpi"><span class="zs-kpi-l">前週差</span><span class="zs-kpi-v ${diffCls(wd)}">${diffStr(wd)}</span></div>
-        <div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v ${diffCls(yd)}">${diffStr(yd)}</span></div>
-      </div>`;
+  // 売上タブの気温列と同一仕様（最高/最低/前週差(or前日差)/前年差/降水量/降水前週差/降水前年差/湿度/湿度前年差）
+  const tempColHtml = (w) => {
+    if (!w) return '<div class="zs-col"><div class="zs-col-head">気温</div><div class="zs-kpi" style="color:var(--muted);font-size:12px">データなし</div></div>';
+    const hasLW = w.temp_vs_last_week !== '' && w.temp_vs_last_week !== null && typeof w.temp_vs_last_week !== 'undefined';
+    const diff = numberOrNaN(hasLW ? w.temp_vs_last_week : w.temp_vs_yesterday);
+    const diffLY = numberOrNaN(w.temp_vs_last_year_same_weekday);
+    const diffStr = Number.isNaN(diff) ? '-' : (diff === 0 ? '±' : diff > 0 ? '+' : '') + diff.toFixed(1) + '℃';
+    const diffLYStr = Number.isNaN(diffLY) ? '-' : (diffLY === 0 ? '±' : diffLY > 0 ? '+' : '') + diffLY.toFixed(1) + '℃';
+    const diffCls = diff > 0 ? 'num-bad' : diff < 0 ? 'num-good' : '';
+    const diffLYCls = diffLY > 0 ? 'num-bad' : diffLY < 0 ? 'num-good' : '';
+    const tempValue = (v) => { const n = numberOrNaN(v); return Number.isNaN(n) ? '-' : n.toFixed(1) + '℃'; };
+    const rainVal = (v) => { const n = numberOrNaN(v); return Number.isNaN(n) ? '-' : n.toFixed(1) + 'mm'; };
+    const rainDiffStr = (v) => { const n = numberOrNaN(v); return Number.isNaN(n) ? '-' : (n === 0 ? '±' : n > 0 ? '+' : '') + n.toFixed(1) + 'mm'; };
+    const rainDiffCls = (v) => { const n = numberOrNaN(v); return Number.isNaN(n) ? '' : n > 0 ? 'num-bad' : n < 0 ? 'num-good' : ''; };
+    return '<div class="zs-col"><div class="zs-col-head">気温</div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">最高</span><span class="zs-kpi-v">'+tempValue(w.max_temp)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">最低</span><span class="zs-kpi-v">'+tempValue(w.min_temp)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'前週差':'前日差')+'</span><span class="zs-kpi-v '+diffCls+'">'+diffStr+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v '+diffLYCls+'">'+diffLYStr+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">降水量</span><span class="zs-kpi-v">'+rainVal(w.rain_mm)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">降水前週差</span><span class="zs-kpi-v '+rainDiffCls(w.rain_vs_last_week)+'">'+rainDiffStr(w.rain_vs_last_week)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">降水前年差</span><span class="zs-kpi-v '+rainDiffCls(w.rain_vs_last_year_same_weekday)+'">'+rainDiffStr(w.rain_vs_last_year_same_weekday)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">湿度</span><span class="zs-kpi-v">'+formatHumidity(w.humidity_avg)+'</span></div>'+
+      '<div class="zs-kpi"><span class="zs-kpi-l">湿度前年差</span><span class="zs-kpi-v '+humidityDiffClass(w.humidity_vs_last_year_same_weekday)+'">'+formatSignedHumidityDiff(w.humidity_vs_last_year_same_weekday)+'</span></div>'+
+      '</div>';
   };
 
   const renderForDate = (date) => {
