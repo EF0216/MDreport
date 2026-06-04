@@ -252,6 +252,8 @@ function renderDashboard(data) {
   renderNews(newsItems);
   renderReviewNews(data.newsReview || []);
   renderTags(data.analysisTags || []);
+  renderStoreSales(data.storeFocusDaily || [], data.storeFocusSubcat || [], data.storeFocusDates || []);
+  renderStoreCategory(data.storeFocusSubcat || [], data.storeFocusDates || []);
 }
 
 function buildImportantAlerts(data) {
@@ -345,6 +347,22 @@ function tempDiffClass(value) {
   const n = numberOrNaN(value);
   if (Number.isNaN(n) || n === 0) return 'temp-neutral';
   return n > 0 ? 'temp-hot' : 'temp-cool';
+}
+// 湿度の表示ヘルパー（GASアプリの formatHumidity / formatSignedHumidityDiff / signedWeatherDiffClass と同等）
+function formatHumidity(value) {
+  const n = numberOrNaN(value);
+  return Number.isNaN(n) ? '-' : n.toFixed(1) + '%';
+}
+function formatSignedHumidityDiff(value) {
+  const n = numberOrNaN(value);
+  if (Number.isNaN(n)) return '-';
+  const sign = n === 0 ? '±' : n > 0 ? '+' : '';
+  return sign + n.toFixed(1) + 'pt';
+}
+// 湿度前年差の着色（湿度が高い＝客足に不利の扱いで、+を num-bad / -を num-good）
+function humidityDiffClass(value) {
+  const n = numberOrNaN(value);
+  return Number.isNaN(n) || n === 0 ? '' : n > 0 ? 'num-bad' : 'num-good';
 }
 function drawEmptyChart(chart, message) {
   chart.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
@@ -611,6 +629,9 @@ function buildNationalAvgWeather(items) {
     last_year_rain_mm:roundAvg('last_year_rain_mm'),
     rain_vs_last_year_same_weekday:roundAvg('rain_vs_last_year_same_weekday'),
     rain_vs_last_week:roundAvg('rain_vs_last_week'),
+    humidity_avg:roundAvg('humidity_avg'),
+    last_year_humidity_avg:roundAvg('last_year_humidity_avg'),
+    humidity_vs_last_year_same_weekday:roundAvg('humidity_vs_last_year_same_weekday'),
     last_year_same_weekday_date:valid[0].last_year_same_weekday_date||'-',
     weather_alert:'全国平均'
   };
@@ -624,11 +645,11 @@ function renderWeather(items, trendItems, zoneOrder) {
   var fmtMmDiff=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':((n>0?'+':'')+n.toFixed(1)+'mm');};
   var rainDiffClass=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'':(n>0?'num-bad':n<0?'num-good':'');};
   renderCards('weatherCards', allItems, function(item) {
-    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.display_date||item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm（昨年 ' + fmtMm(item.last_year_rain_mm) + ' / 前年差 <span class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</span>）</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
+    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.display_date||item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm（昨年 ' + fmtMm(item.last_year_rain_mm) + ' / 前年差 <span class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</span>） / 湿度' + formatHumidity(item.humidity_avg) + '</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 湿度前年差 <span class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
   });
   var tbody = document.getElementById('weatherTable');
   tbody.innerHTML = allItems.map(function(item) {
-    return '<tr><td>' + escapeHtml(item.display_date||item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + fmtMm(item.last_year_rain_mm) + '</td><td class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
+    return '<tr><td>' + escapeHtml(item.display_date||item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + fmtMm(item.last_year_rain_mm) + '</td><td class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</td><td>' + formatHumidity(item.humidity_avg) + '</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
   }).join('');
   renderWeatherTrend(trendItems||[], allItems, zoneOrder||[]);
 }
@@ -684,7 +705,7 @@ function buildWeatherTooltip(row) {
   if(row.last_year_rain_mm!==''&&row.last_year_rain_mm!==null&&row.last_year_rain_mm!==undefined){
     rainLine+='（昨年 '+formatMm(row.last_year_rain_mm)+'）';
   }
-  return [row.date+' '+row.zone+'（'+type+'）','最高 '+formatTemp(row.max_temp)+' / 最低 '+formatTemp(row.min_temp),'昨年最高 '+formatTemp(row.last_year_max_temp)+' / 昨年最低 '+formatTemp(row.last_year_min_temp),rainLine].join('\n');
+  return [row.date+' '+row.zone+'（'+type+'）','最高 '+formatTemp(row.max_temp)+' / 最低 '+formatTemp(row.min_temp),'昨年最高 '+formatTemp(row.last_year_max_temp)+' / 昨年最低 '+formatTemp(row.last_year_min_temp),rainLine,'湿度 '+formatHumidity(row.humidity_avg)].join('\n');
 }
 
 function bindChartTooltip(chart) {
@@ -780,6 +801,8 @@ function renderSales(allRows, dates, weatherItems) {
         '<div class="zs-kpi"><span class="zs-kpi-l">降水量</span><span class="zs-kpi-v">'+rainVal(w.rain_mm)+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">降水前週差</span><span class="zs-kpi-v '+rainDiffCls(rainVsLW)+'">'+rainDiffStr(rainVsLW)+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">降水前年差</span><span class="zs-kpi-v '+rainDiffCls(rainVsLY)+'">'+rainDiffStr(rainVsLY)+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">湿度</span><span class="zs-kpi-v">'+formatHumidity(w.humidity_avg)+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">湿度前年差</span><span class="zs-kpi-v '+humidityDiffClass(w.humidity_vs_last_year_same_weekday)+'">'+formatSignedHumidityDiff(w.humidity_vs_last_year_same_weekday)+'</span></div>'+
         '</div>';
     };
     container.innerHTML='<div class="zs-grid">'+allZones.map(function(z){
@@ -1477,3 +1500,328 @@ function renderProductAnalysis(allRows, dates, weatherTrend, productWeeks, compa
   bumonSelect.onchange=function(){rebuildCategoryOptions();renderView();};
   categorySelect.onchange=renderView;sortSelect.onchange=renderView;
 }
+
+// 店舗売上タブ: 売上タブと同じゾーン別カードUI。区分(上位/下位)→店舗(順位昇順)→部門(メンズ/レディース/合計)。
+// 荒利・粗利率・荒利前年比は店舗日次に列が無いため、store_focus_subcat の荒利を店舗×部門で集計して補う。
+function renderStoreSales(dailyRows, subcatRows, dates) {
+  const select = document.getElementById('storeSalesDateSelect');
+  const container = document.getElementById('storeSalesContent');
+  if (!select || !container) return;
+  const rowsAll = (dailyRows || []).filter((r) => r && r['日付']);
+  const subAll = (subcatRows || []).filter((r) => r && r['日付']);
+  const dateList = (dates && dates.length) ? dates
+    : [...new Set(rowsAll.map((r) => String(r['日付'])))].sort().reverse();
+  if (!dateList.length) {
+    select.innerHTML = '<option>データなし</option>';
+    container.innerHTML = '<div class="empty">店舗売上データはまだありません。</div>';
+    return;
+  }
+  select.innerHTML = dateList.map((d) => `<option value="${escapeAttribute(d)}">${escapeHtml(d)}</option>`).join('');
+
+  const wByDateZone = {};
+  ((state.data && state.data.weatherTrend) || []).forEach((w) => { if (w.date && w.zone) wByDateZone[`${w.date}|${w.zone}`] = w; });
+  ((state.data && state.data.weatherDaily) || []).forEach((w) => { if (w.date && w.zone) wByDateZone[`${w.date}|${w.zone}`] = w; });
+
+  const pctClass = (v) => v === null || Number.isNaN(Number(v)) ? '' : Number(v) >= 100 ? 'num-good' : Number(v) >= 95 ? 'num-warn' : 'num-bad';
+  const numFmt = (v) => Number.isNaN(numberOrNaN(v)) ? '-' : numberOrNaN(v).toLocaleString('ja-JP');
+  const pctFmt = (v) => Number.isNaN(numberOrNaN(v)) ? '-' : numberOrNaN(v).toFixed(1) + '%';
+
+  // 店舗×部門の荒利集計（subcatから）。{ 店舗CD: { all:{p,lp,hasP,hasLp}, bumon:{ 部門名:{...} } } }
+  const buildProfitMap = (date) => {
+    const m = {};
+    subAll.filter((r) => String(r['日付']) === date).forEach((r) => {
+      const code = String(r['店舗CD'] || '');
+      const raw = String(r['部門名'] || '');
+      const bumon = raw.indexOf('レディース') >= 0 ? 'レディース' : raw.indexOf('メンズ') >= 0 ? 'メンズ' : raw;
+      if (!m[code]) m[code] = { all: { p: 0, lp: 0, hasP: false, hasLp: false }, bumon: {} };
+      if (!m[code].bumon[bumon]) m[code].bumon[bumon] = { p: 0, lp: 0, hasP: false, hasLp: false };
+      const p = numberOrNaN(r['販売荒利高']);
+      const lp = numberOrNaN(r['昨年荒利']);
+      if (!Number.isNaN(p)) { m[code].all.p += p; m[code].all.hasP = true; m[code].bumon[bumon].p += p; m[code].bumon[bumon].hasP = true; }
+      if (!Number.isNaN(lp)) { m[code].all.lp += lp; m[code].all.hasLp = true; m[code].bumon[bumon].lp += lp; m[code].bumon[bumon].hasLp = true; }
+    });
+    return m;
+  };
+
+  const makeCol = (row, prof) => {
+    const base = row ? {
+      budget: numberOrNaN(row['予算']),
+      actual: numberOrNaN(row['売上実績']),
+      ratio: numberOrNaN(row['予算比']),
+      ly: numberOrNaN(row['昨年実績']),
+      yoy: numberOrNaN(row['昨年比'])
+    } : { budget: NaN, actual: NaN, ratio: NaN, ly: NaN, yoy: NaN };
+    if (Number.isNaN(base.ratio) && !Number.isNaN(base.actual) && !Number.isNaN(base.budget) && base.budget) base.ratio = Math.round(base.actual / base.budget * 1000) / 10;
+    if (Number.isNaN(base.yoy) && !Number.isNaN(base.actual) && !Number.isNaN(base.ly) && base.ly) base.yoy = Math.round(base.actual / base.ly * 1000) / 10;
+    const profit = (prof && prof.hasP) ? prof.p : NaN;
+    const lyProfit = (prof && prof.hasLp) ? prof.lp : NaN;
+    base.profit = profit;
+    base.grossRate = grossMarginRate(profit, base.actual);
+    base.lyProfit = lyProfit;
+    base.profitYoy = yoyRateValue(profit, lyProfit);
+    return base;
+  };
+  const colHtml = (label, col) => `
+    <div class="zs-col">
+      <div class="zs-col-head">${label}</div>
+      <div class="zs-kpi"><span class="zs-kpi-l">予算</span><span class="zs-kpi-v">${numFmt(col.budget)}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">実績</span><span class="zs-kpi-v">${numFmt(col.actual)}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">達成率</span><span class="zs-kpi-v ${pctClass(col.ratio)}">${pctFmt(col.ratio)}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">前年同週</span><span class="zs-kpi-v">${numFmt(col.ly)}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">前年比</span><span class="zs-kpi-v ${pctClass(col.yoy)}">${pctFmt(col.yoy)}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">荒利</span><span class="zs-kpi-v">${Number.isNaN(col.profit) ? '-' : Math.round(col.profit).toLocaleString('ja-JP')}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">粗利率</span><span class="zs-kpi-v">${Number.isNaN(col.grossRate) ? '-' : col.grossRate.toFixed(1) + '%'}</span></div>
+      <div class="zs-kpi"><span class="zs-kpi-l">荒利前年比</span><span class="zs-kpi-v ${pctClass(col.profitYoy)}">${col.profitYoy === null || Number.isNaN(Number(col.profitYoy)) ? '-' : Number(col.profitYoy).toFixed(1) + '%'}</span></div>
+    </div>`;
+  const tempColHtml = (wt) => {
+    if (!wt) return '';
+    const maxT = numberOrNaN(wt.max_temp);
+    if (Number.isNaN(maxT)) return '';
+    const minT = numberOrNaN(wt.min_temp);
+    const wd = numberOrNaN(wt.temp_vs_last_week);
+    const yd = numberOrNaN(wt.temp_vs_last_year_same_weekday);
+    const diffStr = (n) => Number.isNaN(n) ? '-' : (n === 0 ? '±' : n > 0 ? '+' : '') + n.toFixed(1) + '℃';
+    const diffCls = (n) => Number.isNaN(n) ? '' : n > 0 ? 'num-bad' : n < 0 ? 'num-good' : '';
+    return `
+      <div class="zs-col">
+        <div class="zs-col-head">気温</div>
+        <div class="zs-kpi"><span class="zs-kpi-l ${tempCompareClass(wt.max_temp, wt.last_year_max_temp)}">最高</span><span class="zs-kpi-v">${maxT.toFixed(1)}℃</span></div>
+        <div class="zs-kpi"><span class="zs-kpi-l ${tempCompareClass(wt.min_temp, wt.last_year_min_temp)}">最低</span><span class="zs-kpi-v">${Number.isNaN(minT) ? '-' : minT.toFixed(1) + '℃'}</span></div>
+        <div class="zs-kpi"><span class="zs-kpi-l">前週差</span><span class="zs-kpi-v ${diffCls(wd)}">${diffStr(wd)}</span></div>
+        <div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v ${diffCls(yd)}">${diffStr(yd)}</span></div>
+      </div>`;
+  };
+
+  const renderForDate = (date) => {
+    const rows = rowsAll.filter((r) => String(r['日付']) === date);
+    if (!rows.length) { container.innerHTML = '<div class="empty">この日のデータはありません。</div>'; return; }
+    const profitMap = buildProfitMap(date);
+    const kubuns = [...new Set(rows.map((r) => String(r['区分'] || '')))];
+    const kubunRank = (k) => (k === '良' || k === '上位') ? 0 : (k === '悪' || k === '下位') ? 2 : 1;
+    const ordered = kubuns.slice().sort((a, b) => kubunRank(a) - kubunRank(b));
+    container.innerHTML = ordered.map((kubun) => {
+      const kr = rows.filter((r) => String(r['区分'] || '') === kubun);
+      const order = [];
+      const map = {};
+      kr.forEach((r) => {
+        const code = String(r['店舗CD'] || '');
+        if (!map[code]) { map[code] = { code, name: r['店舗名'], zone: r['ゾーン名'], rank: numberOrNaN(r['順位']), bumon: {} }; order.push(code); }
+        map[code].bumon[String(r['部門'] || '')] = r;
+        const rk = numberOrNaN(r['順位']); if (!Number.isNaN(rk)) map[code].rank = rk;
+      });
+      order.sort((a, b) => {
+        const ra = map[a].rank, rb = map[b].rank;
+        if (Number.isNaN(ra)) return 1; if (Number.isNaN(rb)) return -1; return ra - rb;
+      });
+      const cards = order.map((code) => {
+        const s = map[code];
+        const prof = profitMap[code] || { all: null, bumon: {} };
+        const mens = makeCol(s.bumon['メンズ'], prof.bumon['メンズ']);
+        const ladies = makeCol(s.bumon['レディース'], prof.bumon['レディース']);
+        const totalRow = s.bumon['合計'] || s.bumon['全体'] || s.bumon['計'] || null;
+        let total;
+        if (totalRow) {
+          total = makeCol(totalRow, prof.all);
+        } else {
+          const sum = (a, b) => (Number.isNaN(a) ? 0 : a) + (Number.isNaN(b) ? 0 : b);
+          const tA = sum(mens.actual, ladies.actual), tB = sum(mens.budget, ladies.budget), tL = sum(mens.ly, ladies.ly);
+          const tProfit = (prof.all && prof.all.hasP) ? prof.all.p : NaN;
+          const tLyProfit = (prof.all && prof.all.hasLp) ? prof.all.lp : NaN;
+          total = {
+            budget: tB || NaN, actual: tA || NaN, ratio: tB ? Math.round(tA / tB * 1000) / 10 : NaN,
+            ly: tL || NaN, yoy: tL ? Math.round(tA / tL * 1000) / 10 : NaN,
+            profit: tProfit, grossRate: grossMarginRate(tProfit, tA || NaN), lyProfit: tLyProfit, profitYoy: yoyRateValue(tProfit, tLyProfit)
+          };
+        }
+        const wt = tempColHtml(wByDateZone[`${date}|${s.zone}`] || null);
+        const head = `${Number.isNaN(s.rank) ? '' : '#' + s.rank + ' '}${escapeHtml(s.name || '')}${s.zone ? ' <span style="font-weight:400;color:var(--muted);font-size:12px">' + escapeHtml(s.zone) + '</span>' : ''}`;
+        return `<article class="card zs-card">
+          <div class="zs-card-head">${head}</div>
+          <div class="zs-cols" ${wt ? 'style="grid-template-columns: 1fr 1fr 1fr auto"' : ''}>
+            ${colHtml('メンズ', mens)}${colHtml('レディース', ladies)}${colHtml('合計', total)}${wt}
+          </div>
+        </article>`;
+      }).join('');
+      return `<div class="section-heading" style="margin-top:16px"><h3>${escapeHtml(kubun || '注目店舗')}</h3></div><div class="zs-grid">${cards}</div>`;
+    }).join('');
+  };
+  select.onchange = () => renderForDate(select.value);
+  renderForDate(dateList[0]);
+}
+
+// 店舗カテゴリタブ: カテゴリタブと同じ明細テーブル（データ行＋カテゴリ小計＋合計）。日付＋店舗セレクタ。
+// フィールド対応: 部門名→部門, ミニ部門名→カテゴリ, 品種名→サブカテ, 売上数量/売上実績,
+//   前週売上→売上前週, 昨年売上実績→前年金額, 販売荒利高→荒利, 昨年荒利→前年荒利。比率・差は集計から算出。
+function renderStoreCategory(subcatRows, dates) {
+  const dateSelect = document.getElementById('storeCategoryDateSelect');
+  const storeSelect = document.getElementById('storeCategoryStoreSelect');
+  const tbody = document.getElementById('storeCategoryTableBody');
+  if (!dateSelect || !storeSelect || !tbody) return;
+  const rowsAll = (subcatRows || []).filter((r) => r && r['日付']);
+  const dateList = (dates && dates.length) ? dates
+    : [...new Set(rowsAll.map((r) => String(r['日付'])))].sort().reverse();
+  if (!dateList.length) {
+    dateSelect.innerHTML = '<option>データなし</option>';
+    storeSelect.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="13">店舗カテゴリデータはまだありません。</td></tr>';
+    return;
+  }
+  dateSelect.innerHTML = dateList.map((d) => `<option value="${escapeAttribute(d)}">${escapeHtml(d)}</option>`).join('');
+  const orderKubun = (k) => (k === '良' || k === '上位') ? 0 : (k === '悪' || k === '下位') ? 2 : 1;
+  const pctCls = (v) => v === null || Number.isNaN(Number(v)) ? '' : Number(v) >= 100 ? 'num-good' : Number(v) >= 95 ? 'num-warn' : 'num-bad';
+  const diffCls = (v) => v === null ? '' : v >= 0 ? 'num-good' : 'num-bad';
+  let currentDate = dateList[0];
+
+  const buildStoreOptions = (date) => {
+    const rows = rowsAll.filter((r) => String(r['日付']) === date);
+    const order = [];
+    const map = {};
+    rows.forEach((r) => {
+      const code = String(r['店舗CD'] || '');
+      if (!map[code]) { map[code] = { code, name: r['店舗名'], kubun: String(r['区分'] || ''), rank: numberOrNaN(r['順位']) }; order.push(code); }
+    });
+    order.sort((a, b) => {
+      const ka = orderKubun(map[a].kubun), kb = orderKubun(map[b].kubun);
+      if (ka !== kb) return ka - kb;
+      const ra = map[a].rank, rb = map[b].rank;
+      if (Number.isNaN(ra)) return 1; if (Number.isNaN(rb)) return -1; return ra - rb;
+    });
+    const prev = storeSelect.value;
+    storeSelect.innerHTML = order.map((code) => {
+      const s = map[code];
+      const label = (s.kubun ? '[' + s.kubun + '] ' : '') + (Number.isNaN(s.rank) ? '' : '#' + s.rank + ' ') + (s.name || code);
+      return `<option value="${escapeAttribute(code)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    if (order.includes(prev)) storeSelect.value = prev;
+  };
+
+  const metricsRow = (cells) => cells;
+  const lineRow = (bumon, cat, sub, s, cls) => {
+    const prevPct = (s.hasPrev && s.prevAmt) ? Math.round(s.amt / s.prevAmt * 1000) / 10 : null;
+    const yoy = (s.hasLy && s.lyAmt && s.amt) ? Math.round(s.amt / s.lyAmt * 1000) / 10 : null;
+    const salesDiff = s.hasLy ? s.amt - s.lyAmt : null;
+    const margin = s.hasProfit ? grossMarginRate(s.profit, s.amt) : null;
+    const profitDiff = (s.hasProfit && s.hasLyProfit) ? s.profit - s.lyProfit : null;
+    return `<tr class="${cls || ''}">
+      <td>${escapeHtml(bumon)}</td>
+      <td>${escapeHtml(cat)}</td>
+      <td>${escapeHtml(sub)}</td>
+      <td class="num">${formatNum(s.qty)}</td>
+      <td class="num">${formatYen(s.amt)}</td>
+      <td class="num">${s.hasPrev ? formatYen(s.prevAmt) : '-'}</td>
+      <td class="num ${pctCls(prevPct)}">${prevPct !== null ? prevPct.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasLy ? formatYen(s.lyAmt) : '-'}</td>
+      <td class="num ${diffCls(salesDiff)}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+      <td class="num ${pctCls(yoy)}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasProfit ? formatYen(s.profit) : '-'}</td>
+      <td class="num ${diffCls(profitDiff)}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+      <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+    </tr>`;
+  };
+  const subtotalRow = (label, s) => {
+    const prevPct = (s.hasPrev && s.prevAmt) ? Math.round(s.amt / s.prevAmt * 1000) / 10 : null;
+    const yoy = (s.hasLy && s.lyAmt && s.amt) ? Math.round(s.amt / s.lyAmt * 1000) / 10 : null;
+    const salesDiff = s.hasLy ? s.amt - s.lyAmt : null;
+    const margin = s.hasProfit ? grossMarginRate(s.profit, s.amt) : null;
+    const profitDiff = (s.hasProfit && s.hasLyProfit) ? s.profit - s.lyProfit : null;
+    return `<tr class="row-cat-subtotal">
+      <td></td><td colspan="2">${escapeHtml(label)}　小計</td>
+      <td class="num">${formatNum(s.qty)}</td>
+      <td class="num">${formatYen(s.amt)}</td>
+      <td class="num">${s.hasPrev ? formatYen(s.prevAmt) : '-'}</td>
+      <td class="num ${pctCls(prevPct)}">${prevPct !== null ? prevPct.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasLy ? formatYen(s.lyAmt) : '-'}</td>
+      <td class="num ${diffCls(salesDiff)}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+      <td class="num ${pctCls(yoy)}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasProfit ? formatYen(s.profit) : '-'}</td>
+      <td class="num ${diffCls(profitDiff)}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+      <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+    </tr>`;
+  };
+  const grandTotalRow = (s) => {
+    const prevPct = (s.hasPrev && s.prevAmt) ? Math.round(s.amt / s.prevAmt * 1000) / 10 : null;
+    const yoy = (s.hasLy && s.lyAmt && s.amt) ? Math.round(s.amt / s.lyAmt * 1000) / 10 : null;
+    const salesDiff = s.hasLy ? s.amt - s.lyAmt : null;
+    const margin = s.hasProfit ? grossMarginRate(s.profit, s.amt) : null;
+    const profitDiff = (s.hasProfit && s.hasLyProfit) ? s.profit - s.lyProfit : null;
+    return `<tr class="row-grand-total">
+      <td colspan="3">合　計</td>
+      <td class="num">${formatNum(s.qty)}</td>
+      <td class="num">${formatYen(s.amt)}</td>
+      <td class="num">${s.hasPrev ? formatYen(s.prevAmt) : '-'}</td>
+      <td class="num ${pctCls(prevPct)}">${prevPct !== null ? prevPct.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasLy ? formatYen(s.lyAmt) : '-'}</td>
+      <td class="num ${diffCls(salesDiff)}">${salesDiff !== null ? formatSignedYen(salesDiff) : '-'}</td>
+      <td class="num ${pctCls(yoy)}">${yoy !== null ? yoy.toFixed(1) + '%' : '-'}</td>
+      <td class="num">${s.hasProfit ? formatYen(s.profit) : '-'}</td>
+      <td class="num ${diffCls(profitDiff)}">${profitDiff !== null ? formatSignedYen(profitDiff) : '-'}</td>
+      <td class="num">${margin !== null ? formatPct(margin) : '-'}</td>
+    </tr>`;
+  };
+  const emptyAcc = () => ({ qty: 0, amt: 0, prevAmt: 0, hasPrev: false, lyAmt: 0, hasLy: false, profit: 0, hasProfit: false, lyProfit: 0, hasLyProfit: false });
+  const accumulate = (acc, r) => {
+    acc.qty += numberOrNaN(r['売上数量']) || 0;
+    acc.amt += numberOrNaN(r['売上実績']) || 0;
+    const pw = numberOrNaN(r['前週売上']); if (!Number.isNaN(pw)) { acc.prevAmt += pw; acc.hasPrev = true; }
+    const ly = numberOrNaN(r['昨年売上実績']); if (!Number.isNaN(ly)) { acc.lyAmt += ly; acc.hasLy = true; }
+    const pf = numberOrNaN(r['販売荒利高']); if (!Number.isNaN(pf)) { acc.profit += pf; acc.hasProfit = true; }
+    const lpf = numberOrNaN(r['昨年荒利']); if (!Number.isNaN(lpf)) { acc.lyProfit += lpf; acc.hasLyProfit = true; }
+  };
+
+  const renderTable = (date, storeCode) => {
+    let rows = rowsAll.filter((r) => String(r['日付']) === date);
+    if (storeCode) rows = rows.filter((r) => String(r['店舗CD'] || '') === storeCode);
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="13">この条件のデータはありません。</td></tr>'; return; }
+    // 部門名|ミニ部門名|品種 で集計
+    const map = {};
+    const order = [];
+    rows.forEach((r) => {
+      const bumon = String(r['部門名'] || '');
+      const cat = String(r['ミニ部門名'] || '');
+      const sub = String(r['品種名'] || '');
+      const key = `${bumon}|${cat}|${String(r['品種CD'] || sub)}`;
+      if (!map[key]) { map[key] = { bumon, cat, sub, acc: emptyAcc() }; order.push(key); }
+      accumulate(map[key].acc, r);
+    });
+    order.sort((a, b) => {
+      const A = map[a], B = map[b];
+      const d1 = String(A.bumon).localeCompare(String(B.bumon)); if (d1 !== 0) return d1;
+      const d2 = String(A.cat).localeCompare(String(B.cat)); if (d2 !== 0) return d2;
+      return String(A.sub).localeCompare(String(B.sub));
+    });
+
+    let html = '';
+    let prevCatKey = null;
+    let catSub = emptyAcc(); let catName = '';
+    const grand = emptyAcc();
+    const addInto = (dst, src) => {
+      dst.qty += src.qty; dst.amt += src.amt;
+      if (src.hasPrev) { dst.prevAmt += src.prevAmt; dst.hasPrev = true; }
+      if (src.hasLy) { dst.lyAmt += src.lyAmt; dst.hasLy = true; }
+      if (src.hasProfit) { dst.profit += src.profit; dst.hasProfit = true; }
+      if (src.hasLyProfit) { dst.lyProfit += src.lyProfit; dst.hasLyProfit = true; }
+    };
+    order.forEach((key, i) => {
+      const e = map[key];
+      const catKey = `${e.bumon}|${e.cat}`;
+      if (prevCatKey !== null && prevCatKey !== catKey) {
+        html += subtotalRow(catName, catSub);
+        catSub = emptyAcc();
+      }
+      prevCatKey = catKey;
+      catName = e.cat;
+      html += lineRow(e.bumon, e.cat, e.sub, e.acc);
+      addInto(catSub, e.acc);
+      addInto(grand, e.acc);
+      if (i === order.length - 1) html += subtotalRow(catName, catSub);
+    });
+    html += grandTotalRow(grand);
+    tbody.innerHTML = html;
+  };
+
+  dateSelect.onchange = () => { currentDate = dateSelect.value; buildStoreOptions(currentDate); renderTable(currentDate, storeSelect.value); };
+  storeSelect.onchange = () => renderTable(currentDate, storeSelect.value);
+  buildStoreOptions(currentDate);
+  renderTable(currentDate, storeSelect.value);
+}
+

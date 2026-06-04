@@ -95,23 +95,23 @@
     .week-tab { flex:0 0 auto; padding:7px 10px; border-color:#cdd9e5; background:#fff; }
     .sales-block { margin-bottom:32px; }
     .sales-block-title { font-size:14px; font-weight:700; color:#1e3a5f; margin:0 0 8px; padding-bottom:4px; border-bottom:2px solid #1f5f99; }
-    .sales-table th.num,.sales-table td.num,#categoryTable th.num,#categoryTable td.num { text-align:right; font-variant-numeric:tabular-nums; }
-    #categoryTable { min-width:0; width:100%; table-layout:fixed; font-size:12px; }
-    #categoryTable th,#categoryTable td { white-space:normal; overflow-wrap:anywhere; padding:8px 6px; line-height:1.35; }
-    #categoryTable th:nth-child(1),#categoryTable td:nth-child(1){width:10%}
-    #categoryTable th:nth-child(2),#categoryTable td:nth-child(2){width:9%}
-    #categoryTable th:nth-child(3),#categoryTable td:nth-child(3){width:10%}
-    #categoryTable th:nth-child(4),#categoryTable td:nth-child(4){width:6%}
-    #categoryTable th:nth-child(5),#categoryTable td:nth-child(5){width:8%}
-    #categoryTable th:nth-child(6),#categoryTable td:nth-child(6){width:9%}
-    #categoryTable th:nth-child(7),#categoryTable td:nth-child(7){width:8%}
-    #categoryTable th:nth-child(8),#categoryTable td:nth-child(8){width:6%}
-    #categoryTable th:nth-child(9),#categoryTable td:nth-child(9){width:7%}
-    #categoryTable th:nth-child(10),#categoryTable td:nth-child(10){width:7%}
-    #categoryTable th:nth-child(11),#categoryTable td:nth-child(11){width:8%}
-    #categoryTable th:nth-child(12),#categoryTable td:nth-child(12){width:5%}
-    #categoryTable th:nth-child(13),#categoryTable td:nth-child(13){width:7%}
-    #categoryTable td.num { word-break:keep-all; }
+    .sales-table th.num,.sales-table td.num,:is(#categoryTable,#storeCategoryTable) th.num,:is(#categoryTable,#storeCategoryTable) td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    :is(#categoryTable,#storeCategoryTable) { min-width:0; width:100%; table-layout:fixed; font-size:12px; }
+    :is(#categoryTable,#storeCategoryTable) th,:is(#categoryTable,#storeCategoryTable) td { white-space:normal; overflow-wrap:anywhere; padding:8px 6px; line-height:1.35; }
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(1),:is(#categoryTable,#storeCategoryTable) td:nth-child(1){width:10%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(2),:is(#categoryTable,#storeCategoryTable) td:nth-child(2){width:9%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(3),:is(#categoryTable,#storeCategoryTable) td:nth-child(3){width:10%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(4),:is(#categoryTable,#storeCategoryTable) td:nth-child(4){width:6%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(5),:is(#categoryTable,#storeCategoryTable) td:nth-child(5){width:8%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(6),:is(#categoryTable,#storeCategoryTable) td:nth-child(6){width:9%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(7),:is(#categoryTable,#storeCategoryTable) td:nth-child(7){width:8%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(8),:is(#categoryTable,#storeCategoryTable) td:nth-child(8){width:6%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(9),:is(#categoryTable,#storeCategoryTable) td:nth-child(9){width:7%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(10),:is(#categoryTable,#storeCategoryTable) td:nth-child(10){width:7%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(11),:is(#categoryTable,#storeCategoryTable) td:nth-child(11){width:8%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(12),:is(#categoryTable,#storeCategoryTable) td:nth-child(12){width:5%}
+    :is(#categoryTable,#storeCategoryTable) th:nth-child(13),:is(#categoryTable,#storeCategoryTable) td:nth-child(13){width:7%}
+    :is(#categoryTable,#storeCategoryTable) td.num { word-break:keep-all; }
     #productAnalysisTable { min-width:1680px; }
     .row-total td { font-weight:700; background:#f0f4f8; }
     .row-cat-subtotal td { background:#e8f0f8; font-weight:700; border-top:1px solid #b0c4de; border-bottom:1px solid #b0c4de; }
@@ -210,6 +210,8 @@
       <button class="tab" data-section="sales" type="button">売上</button>
       <button class="tab" data-section="category" type="button">カテゴリ</button>
       <button class="tab" data-section="products" type="button">商品</button>
+      <button class="tab" data-section="storeSales" type="button">店舗売上</button>
+      <button class="tab" data-section="storeCategory" type="button">店舗カテゴリ</button>
       <button class="tab" data-section="news" type="button">ニュース</button>
       <button class="tab" data-section="review" type="button">保留</button>
       <button class="tab" data-section="tags" type="button">タグ</button>
@@ -250,8 +252,8 @@
         <div class="table-wrap">
           <table><thead><tr>
             <th>日付</th><th>ゾーン</th><th>最高</th><th>最低</th><th>降水量</th>
-            <th>昨年降水量</th><th>降水前年差</th>
-            <th>前週差</th><th>前年差</th><th>昨年同週同曜日</th><th>アラート</th>
+            <th>昨年降水量</th><th>降水前年差</th><th>湿度</th>
+            <th>前週差</th><th>前年差</th><th>湿度前年差</th><th>昨年同週同曜日</th><th>アラート</th>
           </tr></thead><tbody id="weatherTable"></tbody></table>
         </div>
       </section>
@@ -336,6 +338,36 @@
               <th>気温寄与メモ</th><th>前週伸びゾーン</th><th>前週落ちゾーン</th>
             </tr></thead>
             <tbody id="productAnalysisTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="storeSales" class="dashboard-section">
+        <div class="section-heading">
+          <h2>注目店舗 売上</h2>
+          <span style="font-size:13px;font-weight:400;color:var(--muted)">予算比 上位／下位（売上高平均以上の店舗）</span>
+          <label class="toolbar-label"><span>日付</span><select id="storeSalesDateSelect"></select></label>
+        </div>
+        <div id="storeSalesContent"></div>
+      </section>
+
+      <section id="storeCategory" class="dashboard-section">
+        <div class="section-heading"><h2>注目店舗 カテゴリ別 実績</h2></div>
+        <div class="toolbar-row">
+          <label class="toolbar-label"><span>日付</span><select id="storeCategoryDateSelect"></select></label>
+          <label class="toolbar-label"><span>店舗</span><select id="storeCategoryStoreSelect"></select></label>
+        </div>
+        <div class="table-wrap sticky-table-wrap category-table-wrap">
+          <table id="storeCategoryTable">
+            <thead><tr>
+              <th>部門</th><th>カテゴリ</th><th>サブカテゴリ</th>
+              <th class="num">実績数量</th><th class="num">実績金額</th>
+              <th class="num">売上前週同曜日実績</th><th class="num">前週比</th>
+              <th class="num">前年同週同曜日金額</th><th class="num">売上前年差</th>
+              <th class="num">昨年対比</th><th class="num">荒利</th>
+              <th class="num">荒利前年差</th><th class="num">粗利率</th>
+            </tr></thead>
+            <tbody id="storeCategoryTableBody"></tbody>
           </table>
         </div>
       </section>
