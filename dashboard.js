@@ -203,6 +203,7 @@ function renderDashboard(data) {
       salesAlertWeatherItems=weatherItems;
     }
   }
+  renderOverviewTrendCards(data);
   renderTodayAlerts(_alerts);
   renderStoreSalesHighlight(data.storeFocusDaily || [], data.storeFocusSubcat || [], data.storeFocusDates || []);
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], salesAlertWeatherItems);
@@ -406,6 +407,371 @@ function formatPct(value) {
 function formatNum(value) {
   const n = numberOrNaN(value);
   return Number.isNaN(n) ? '-' : n.toLocaleString('ja-JP');
+}
+
+function formatCompactYen(value) {
+  const n = numberOrNaN(value);
+  if (Number.isNaN(n)) return '-';
+  if (Math.abs(n) >= 10000) return Math.round(n / 10000).toLocaleString('ja-JP') + '万';
+  return Math.round(n).toLocaleString('ja-JP');
+}
+
+function isBumonAggregateRow(row) {
+  return String(row && row.zone_code || '').padStart(4, '0') === '0000' || (row && row.zone_name) === '全社計';
+}
+
+function preferredBumonRows(rows) {
+  const list = rows || [];
+  const aggregateRows = list.filter(isBumonAggregateRow);
+  return aggregateRows.length ? aggregateRows : list.filter((row) => !isBumonAggregateRow(row));
+}
+
+function sumBumonMetrics(rows) {
+  const base = { actual: 0, budget: 0, lastYear: 0, profit: 0, lastYearProfit: 0, hasActual: false, hasProfit: false, hasLastYearProfit: false };
+  preferredBumonRows(rows).forEach((row) => {
+    const actual = numberOrNaN(row['売上実績']);
+    const budget = numberOrNaN(row['売上予算']);
+    const lastYear = numberOrNaN(row['前年同週同曜日実績']);
+    const profit = grossProfitFromRow(row, '売上実績');
+    const lastYearProfit = lastYearGrossProfitFromRow(row);
+    if (!Number.isNaN(actual)) { base.actual += actual; base.hasActual = true; }
+    if (!Number.isNaN(budget)) base.budget += budget;
+    if (!Number.isNaN(lastYear)) base.lastYear += lastYear;
+    if (!Number.isNaN(profit)) { base.profit += profit; base.hasProfit = true; }
+    if (!Number.isNaN(lastYearProfit)) { base.lastYearProfit += lastYearProfit; base.hasLastYearProfit = true; }
+  });
+  base.budgetRatio = base.budget ? base.actual / base.budget * 100 : NaN;
+  base.yearRatio = base.lastYear ? base.actual / base.lastYear * 100 : NaN;
+  base.grossRate = base.actual && base.hasProfit ? base.profit / base.actual * 100 : NaN;
+  base.profitYearRatio = base.lastYearProfit && base.hasProfit ? base.profit / base.lastYearProfit * 100 : NaN;
+  return base;
+}
+
+function bumonMetricsByDate(rows) {
+  const map = {};
+  (rows || []).forEach((row) => {
+    if (!row.date) return;
+    if (!map[row.date]) map[row.date] = [];
+    map[row.date].push(row);
+  });
+  return Object.keys(map).sort().map((date) => Object.assign({ date }, sumBumonMetrics(map[date])));
+}
+
+function latestNonZeroMetric(metrics) {
+  return [...(metrics || [])].reverse().find((item) => item.hasActual && item.actual > 0) || null;
+}
+
+function overviewBumonContext(data) {
+  const rows = data.legwearBumon || [];
+  const daily = bumonMetricsByDate(rows);
+  if (state.dateMode === 'weekly') {
+    const ww = currentWeekWindow();
+    if (ww) {
+      const currentRows = aggregateBumonPeriod(rows, ww.startDate, ww.endDate, ww.key);
+      const compareRows = aggregateBumonPeriod(rows, ww.compareStartDate, ww.compareEndDate, ww.compareKey);
+      const weeklySeries = (state.weekWindows || []).slice().reverse().map((w) =>
+        Object.assign({ date: w.key }, sumBumonMetrics(aggregateBumonPeriod(rows, w.startDate, w.endDate, w.key)))
+      ).filter((item) => item.hasActual);
+      return {
+        labelSuffix: '当週',
+        periodLabel: ww.startDate + '～' + ww.endDate,
+        current: Object.assign({ date: ww.key }, sumBumonMetrics(currentRows)),
+        compare: Object.assign({ date: ww.compareKey }, sumBumonMetrics(compareRows)),
+        series: weeklySeries
+      };
+    }
+  }
+  const current = latestNonZeroMetric(daily);
+  const currentIndex = current ? daily.findIndex((item) => item.date === current.date) : -1;
+  const sameWeekday = current ? shiftDateString(current.date, -7) : '';
+  const compare = daily.find((item) => item.date === sameWeekday) || (currentIndex > 0 ? daily[currentIndex - 1] : null);
+  return {
+    labelSuffix: '本日',
+    periodLabel: current ? current.date : '-',
+    current,
+    compare,
+    series: daily.slice(-14)
+  };
+}
+
+function formatDegreeShort(value) {
+  const n = numberOrNaN(value);
+  return Number.isNaN(n) ? '-' : n.toFixed(1);
+}
+
+function temperatureRangeLabel(temp) {
+  return '最高' + formatDegreeShort(temp.high) + ' / 最低' + formatDegreeShort(temp.low);
+}
+
+function lastYearTemperatureValue(value, row) {
+  const n = numberOrNaN(value);
+  if (Number.isNaN(n)) return NaN;
+  return row && row.source === 'forecast' && n === 0 ? NaN : n;
+}
+
+function temperatureStatsForDate(date, rows) {
+  let high = NaN;
+  let low = NaN;
+  let lastYearHigh = NaN;
+  let lastYearLow = NaN;
+  let highZone = '';
+  let lowZone = '';
+  let isForecast = false;
+  (rows || []).forEach((row) => {
+    const maxTemp = numberOrNaN(row.max_temp);
+    const minTemp = numberOrNaN(row.min_temp);
+    const lyMaxTemp = lastYearTemperatureValue(row.last_year_max_temp, row);
+    const lyMinTemp = lastYearTemperatureValue(row.last_year_min_temp, row);
+    if (row.source === 'forecast') isForecast = true;
+    if (!Number.isNaN(maxTemp) && (Number.isNaN(high) || maxTemp > high)) {
+      high = maxTemp;
+      highZone = row.zone || row.area_name || '';
+    }
+    if (!Number.isNaN(minTemp) && (Number.isNaN(low) || minTemp < low)) {
+      low = minTemp;
+      lowZone = row.zone || row.area_name || '';
+    }
+    if (!Number.isNaN(lyMaxTemp) && (Number.isNaN(lastYearHigh) || lyMaxTemp > lastYearHigh)) {
+      lastYearHigh = lyMaxTemp;
+    }
+    if (!Number.isNaN(lyMinTemp) && (Number.isNaN(lastYearLow) || lyMinTemp < lastYearLow)) {
+      lastYearLow = lyMinTemp;
+    }
+  });
+  return { date, high, low, lastYearHigh, lastYearLow, highZone, lowZone, isForecast };
+}
+
+function overviewTemperatureContext(data) {
+  const source = (data.weatherTrend && data.weatherTrend.length)
+    ? data.weatherTrend
+    : ((data.weatherLatest && data.weatherLatest.length) ? data.weatherLatest : (data.weatherDaily || []));
+  const byDate = {};
+  source.forEach((row) => {
+    if (!row.date) return;
+    if (!byDate[row.date]) byDate[row.date] = [];
+    byDate[row.date].push(row);
+  });
+  const allSeries = Object.keys(byDate).sort().map((date) => temperatureStatsForDate(date, byDate[date]))
+    .filter((item) => !Number.isNaN(item.high) || !Number.isNaN(item.low));
+  let series = allSeries;
+  if (state.dateMode === 'weekly') {
+    const ww = currentWeekWindow();
+    if (ww) series = allSeries.filter((item) => item.date >= ww.startDate && item.date <= ww.endDate);
+  } else {
+    series = allSeries.slice(-22);
+  }
+  const range = series.reduce((memo, item) => {
+    if (!Number.isNaN(item.high) && (Number.isNaN(memo.high) || item.high > memo.high)) {
+      memo.high = item.high;
+      memo.highZone = item.highZone;
+    }
+    if (!Number.isNaN(item.low) && (Number.isNaN(memo.low) || item.low < memo.low)) {
+      memo.low = item.low;
+      memo.lowZone = item.lowZone;
+    }
+    return memo;
+  }, { high: NaN, low: NaN, highZone: '', lowZone: '' });
+  return {
+    high: range.high,
+    low: range.low,
+    highZone: range.highZone,
+    lowZone: range.lowZone,
+    series,
+    dayCount: series.length,
+    forecastCount: series.filter((item) => item.isForecast).length
+  };
+}
+
+function salesDepartmentBreakdown(rows, date) {
+  const totals = {};
+  preferredBumonRows((rows || []).filter((row) => row.date === date)).forEach((row) => {
+    const name = String(row['部門名'] || '');
+    const shortName = name.includes('レディース') ? 'レディース' : name.includes('メンズ') ? 'メンズ' : (name || '部門');
+    const actual = numberOrNaN(row['売上実績']);
+    if (Number.isNaN(actual)) return;
+    totals[shortName] = (totals[shortName] || 0) + actual;
+  });
+  return ['レディース', 'メンズ'].filter((name) => Object.prototype.hasOwnProperty.call(totals, name))
+    .map((name) => name + formatCompactYen(totals[name]));
+}
+
+function salesOverviewFoot(data, current) {
+  const dateLabel = current && current.date ? formatSparklineDate(current.date) + ' 合計' : '最新合計';
+  const breakdown = salesDepartmentBreakdown(data.legwearBumon || [], current && current.date);
+  const parts = [dateLabel];
+  if (breakdown.length) parts.push(breakdown.join('・'));
+  parts.push('対予算 ' + formatPct(current && current.budgetRatio));
+  return parts.join(' / ');
+}
+
+function metricDelta(current, compare, field, asRate) {
+  if (!current || !compare) return NaN;
+  const c = numberOrNaN(current[field]);
+  const p = numberOrNaN(compare[field]);
+  if (Number.isNaN(c) || Number.isNaN(p) || (asRate && !p)) return NaN;
+  return asRate ? (c / p * 100 - 100) : c - p;
+}
+
+function trendChip(delta, fixedLabel) {
+  if (fixedLabel) return { label: fixedLabel, tone: 'neutral' };
+  const n = numberOrNaN(delta);
+  if (Number.isNaN(n)) return { label: '-', tone: 'neutral' };
+  if (n === 0) return { label: '±0.0', tone: 'neutral' };
+  return { label: (n > 0 ? '▲ +' : '▼ ') + n.toFixed(1), tone: n > 0 ? 'up' : 'down' };
+}
+
+function formatSparklineScaleLabel(value, scale) {
+  const n = numberOrNaN(value);
+  if (Number.isNaN(n)) return '-';
+  if (scale && scale.type === 'yen') return formatCompactYen(n);
+  if (scale && scale.type === 'pct') return (Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(1)) + '%';
+  return Math.abs(n) >= 100 ? Math.round(n).toLocaleString('ja-JP') : n.toFixed(1);
+}
+
+function sparklineSvg(values, tone, scale) {
+  const nums = (values || []).map((v) => numberOrNaN(v)).filter((v) => !Number.isNaN(v));
+  const stroke = tone === 'down' ? '#7fa7ff' : tone === 'alert' ? '#f7b547' : tone === 'profit' ? '#c69af7' : '#5ed7af';
+  if (nums.length < 2) return '<svg viewBox="0 0 160 54" aria-hidden="true"><path d="M48 42 L156 42" stroke="' + stroke + '" stroke-width="3" fill="none" opacity=".75"/></svg>';
+  const min = Math.min.apply(null, nums);
+  const max = Math.max.apply(null, nums);
+  const range = Math.max(1, max - min);
+  const left = 48, right = 156, top = 8, bottom = 42;
+  const yFor = (value) => bottom - ((value - min) / range) * (bottom - top);
+  const ticks = [max, (max + min) / 2, min];
+  const grid = ticks.map((tick) => {
+    const yy = yFor(tick).toFixed(1);
+    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#273448" stroke-width="1" opacity=".86"></line>' +
+      '<text class="overview-scale-label" x="2" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#dbeafe" font-size="9" font-weight="900" stroke="#111827" stroke-width="1.2" paint-order="stroke">' + escapeHtml(formatSparklineScaleLabel(tick, scale)) + '</text>';
+  }).join('');
+  const points = nums.map((value, index) => {
+    const x = left + (index / Math.max(1, nums.length - 1)) * (right - left);
+    const y = yFor(value);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  const area = [left + ',50'].concat(points).concat([right + ',50']).join(' ');
+  return '<svg viewBox="0 0 160 54" preserveAspectRatio="none" aria-hidden="true">' +
+    grid +
+    '<polygon points="' + area + '" fill="' + stroke + '" opacity=".13"></polygon>' +
+    '<polyline points="' + points.join(' ') + '" fill="none" stroke="' + stroke + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>' +
+    '<circle cx="' + points[points.length - 1].split(',')[0] + '" cy="' + points[points.length - 1].split(',')[1] + '" r="2.8" fill="' + stroke + '"></circle>' +
+    '</svg>';
+}
+
+function temperatureTrendLegend() {
+  return '<div class="overview-trend-temp-legend">' +
+    '<span><i class="overview-temp-key"></i>最高気温</span>' +
+    '<span><i class="overview-temp-key low"></i>最低気温</span>' +
+    '<span><i class="overview-temp-key last-high"></i>昨年最高</span>' +
+    '<span><i class="overview-temp-key last-low"></i>昨年最低</span>' +
+    '<span><i class="overview-temp-key forecast"></i>予報</span>' +
+    '</div>';
+}
+
+function temperatureSparklineSvg(series) {
+  const rows = (series || []).filter((item) => item && item.date);
+  const allValues = [];
+  rows.forEach((item) => {
+    ['high', 'low', 'lastYearHigh', 'lastYearLow'].forEach((field) => {
+      const value = numberOrNaN(item[field]);
+      if (!Number.isNaN(value)) allValues.push(value);
+    });
+  });
+  if (rows.length < 2 || !allValues.length) return sparklineSvg(rows.map((item) => item.high), 'alert');
+  const min = Math.floor(Math.min.apply(null, allValues) / 5) * 5;
+  const max = Math.ceil(Math.max.apply(null, allValues) / 5) * 5;
+  const range = Math.max(1, max - min);
+  const left = 18, right = 156, top = 8, bottom = 64;
+  const x = (index) => left + (index / Math.max(1, rows.length - 1)) * (right - left);
+  const y = (value) => bottom - ((value - min) / range) * (bottom - top);
+  const line = (field, color, dashed) => {
+    const points = rows.map((item, index) => {
+      const value = numberOrNaN(item[field]);
+      return Number.isNaN(value) ? '' : x(index).toFixed(1) + ',' + y(value).toFixed(1);
+    }).filter(Boolean).join(' ');
+    if (!points) return '';
+    return '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"' + (dashed ? ' stroke-dasharray="5 5"' : '') + '></polyline>';
+  };
+  const ticks = [max, Math.round((max + min) / 2), min];
+  const grid = ticks.map((tick) => {
+    const yy = y(tick).toFixed(1);
+    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#273448" stroke-width="1"></line>' +
+      '<text class="overview-scale-label" x="1" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#dbeafe" font-size="9" font-weight="900" stroke="#111827" stroke-width="1.2" paint-order="stroke">' + tick + '℃</text>';
+  }).join('');
+  const forecastDots = rows.map((item, index) => {
+    if (!item.isForecast) return '';
+    const value = numberOrNaN(item.high);
+    if (Number.isNaN(value)) return '';
+    return '<circle cx="' + x(index).toFixed(1) + '" cy="' + y(value).toFixed(1) + '" r="2.5" fill="#f59e0b"></circle>';
+  }).join('');
+  return '<svg viewBox="0 0 160 72" preserveAspectRatio="none" aria-hidden="true">' +
+    grid +
+    line('lastYearHigh', '#8f6bff', true) +
+    line('lastYearLow', '#96a4ba', true) +
+    line('high', '#6fa6ff', false) +
+    line('low', '#9aa7bb', false) +
+    forecastDots +
+    '</svg>';
+}
+
+function formatSparklineDate(date) {
+  const value = String(date || '');
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value;
+  return Number(match[2]) + '/' + Number(match[3]);
+}
+
+function sparklineDateLabels(series, maxLabels) {
+  const rows = (series || []).filter((item) => item && item.date);
+  if (!rows.length) return [];
+  const count = Math.max(1, Math.min(rows.length, maxLabels || 3));
+  const indexes = count >= 3
+    ? Array.from({ length: count }, (_, index) => Math.round(index * (rows.length - 1) / (count - 1)))
+    : rows.map((_, index) => index);
+  const seen = {};
+  return indexes.map((index) => formatSparklineDate(rows[index].date)).filter((label) => {
+    if (!label || seen[label]) return false;
+    seen[label] = true;
+    return true;
+  });
+}
+
+function buildOverviewTrendCards(data) {
+  const ctx = overviewBumonContext(data);
+  const current = ctx.current || {};
+  const compare = ctx.compare || {};
+  const series = ctx.series || [];
+  const temperature = overviewTemperatureContext(data);
+  const salesDates = sparklineDateLabels(series);
+  const temperatureDates = sparklineDateLabels(temperature.series || [], 7);
+  const salesDelta = trendChip(metricDelta(current, compare, 'actual', true));
+  const budgetDelta = trendChip(metricDelta(current, compare, 'budgetRatio', false));
+  const yearDelta = trendChip(metricDelta(current, compare, 'yearRatio', false));
+  const grossDelta = trendChip(metricDelta(current, compare, 'grossRate', false));
+  return [
+    { label: 'レッグウェア売上(' + (state.dateMode === 'weekly' ? '当週' : '最新') + ')', value: formatCompactYen(current.actual), unit: '', chip: salesDelta, foot: salesOverviewFoot(data, current), tone: 'down', series: series.map((item) => item.actual), scale: { type: 'yen' }, dates: salesDates },
+    { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
+    { label: '前年同週比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '前年同週同曜日', tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
+    { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
+    { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, '予報' + formatNum(temperature.forecastCount) + '日'), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
+  ];
+}
+
+function renderOverviewTrendCards(data) {
+  const container = document.getElementById('overviewTrendCards');
+  if (!container) return;
+  const cards = buildOverviewTrendCards(data || {});
+  container.innerHTML = cards.map((card) => {
+    const chip = card.chip || { label: '-', tone: 'neutral' };
+    return '<article class="overview-trend-card ' + escapeAttribute(card.className || '') + '">' +
+      '<div class="overview-trend-head"><div class="overview-trend-label">' + escapeHtml(card.label) + '</div>' +
+      '<span class="overview-trend-chip ' + escapeAttribute(chip.tone) + '">' + escapeHtml(chip.label) + '</span></div>' +
+      '<div class="overview-trend-value">' + escapeHtml(card.value) + '<span class="overview-trend-unit">' + escapeHtml(card.unit || '') + '</span></div>' +
+      '<div class="overview-trend-chart">' + (card.chartHtml || sparklineSvg(card.series, card.tone, card.scale)) + '</div>' +
+      '<div class="overview-trend-axis">' + (card.dates || []).map((label) => '<span>' + escapeHtml(label) + '</span>').join('') + '</div>' +
+      (card.legendHtml || '') +
+      '<div class="overview-trend-foot">' + escapeHtml(card.foot) + '</div>' +
+      '</article>';
+  }).join('');
 }
 
 // -- 重要アラートタブ
