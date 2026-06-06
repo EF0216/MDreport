@@ -204,6 +204,7 @@ function renderDashboard(data) {
     }
   }
   renderTodayAlerts(_alerts);
+  renderStoreSalesHighlight(data.storeFocusDaily || [], data.storeFocusSubcat || [], data.storeFocusDates || []);
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], salesAlertWeatherItems);
   renderWeather(weatherItems, weatherTrendItems, data.zoneOrder || []);
 
@@ -452,6 +453,127 @@ function renderTodayAlerts(items) {
   renderCards('todayAlerts', display, function(item) {
     return '<article class="card important"><div class="meta"><span>' + escapeHtml(item.date) + '</span><span>' + escapeHtml(item.category) + '</span><span>' + escapeHtml(item.keyword||'') + '</span><span class="importance">重要度 ' + escapeHtml(item.importance) + '</span></div><div class="card-title">' + escapeHtml(item.evidence) + '</div><div>' + escapeHtml(item.sales_check_point) + '</div><div class="action">' + escapeHtml(item.action) + '</div></article>';
   });
+}
+
+// -- 重要タブ: 店舗売上 好調・苦戦（予算比 上位3／下位3）
+// storeFocusDaily の最新日付から、区分「良(上位)」順位1-3 と「悪(下位)」順位1-3 を抜き出し、
+// 売上動向アラートと同じカード仕様（タイトル＋合計サマリ＋メンズ/レディース内訳）で表示する。
+// 内訳には storeFocusSubcat から主要サブカテ（前週金額影響の最大）と荒利/粗利率/荒利前年比を付ける。
+function renderStoreSalesHighlight(dailyRows, subcatRows, dates) {
+  const section = document.getElementById('storeHighlightSection');
+  if (!section) return;
+  const goodEl = document.getElementById('storeHighlightGood');
+  const badEl = document.getElementById('storeHighlightBad');
+  const dateBadge = document.getElementById('storeHighlightDate');
+  const rowsAll = (dailyRows || []).filter((r) => r && r['日付']);
+  if (!rowsAll.length) { section.hidden = true; return; }
+  const dateList = (dates && dates.length) ? dates
+    : [...new Set(rowsAll.map((r) => String(r['日付'])))].sort().reverse();
+  const latest = dateList[0];
+  const prevD = shiftDateString(latest, -7);
+  const dayRows = rowsAll.filter((r) => String(r['日付']) === String(latest));
+  const isGood = (k) => k === '良' || k === '上位';
+  const isBad = (k) => k === '悪' || k === '下位';
+
+  // 店舗ごとに 合計/メンズ/レディース 行をまとめ、順位順に上位3店舗を返す
+  const groupStores = (predicate) => {
+    const map = {};
+    const order = [];
+    dayRows.filter((r) => predicate(String(r['区分'] || ''))).forEach((r) => {
+      const code = String(r['店舗CD'] || '') + '|' + (r['店舗名'] || '');
+      if (!map[code]) { map[code] = { cd: r['店舗CD'], name: r['店舗名'], zone: r['ゾーン名'], rank: numberOrNaN(r['順位']), bumon: {} }; order.push(code); }
+      map[code].bumon[String(r['部門'] || '')] = r;
+      const rk = numberOrNaN(r['順位']); if (!Number.isNaN(rk)) map[code].rank = rk;
+    });
+    return order.map((c) => map[c])
+      .sort((a, b) => (Number.isNaN(a.rank) ? 999 : a.rank) - (Number.isNaN(b.rank) ? 999 : b.rank))
+      .slice(0, 3);
+  };
+  const good = groupStores(isGood);
+  const bad = groupStores(isBad);
+  if (!good.length && !bad.length) { section.hidden = true; return; }
+  section.hidden = false;
+  if (dateBadge) dateBadge.textContent = latest || '';
+
+  const fY = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) ? '-' : Math.round(Number(v)).toLocaleString('ja-JP') + '円';
+  const fR = (v) => (v === null || v === '' || Number.isNaN(Number(v))) ? '-' : Number(v).toFixed(1) + '%';
+  const fD = (v) => { const n = Number(v || 0); return (n > 0 ? '+' : '') + n.toLocaleString('ja-JP') + '円'; };
+  const rCls = (v) => (v === null || v === '' || Number.isNaN(Number(v))) ? '' : Number(v) >= 100 ? 'num-good' : Number(v) >= 95 ? 'num-warn' : 'num-bad';
+
+  // 店舗×部門のサブカテ集計（storeFocusSubcat）。荒利合計と主要サブカテ（前週金額影響の絶対値最大）を返す。
+  const subLatest = (subcatRows || []).filter((r) => r && String(r['日付']) === String(latest));
+  const bumonOf = (raw) => { raw = String(raw || ''); return raw.indexOf('レディース') >= 0 ? 'レディース' : raw.indexOf('メンズ') >= 0 ? 'メンズ' : raw; };
+  const detail = (cd, which) => {
+    const rows = subLatest.filter((r) => String(r['店舗CD']) === String(cd) && bumonOf(r['部門名']) === which);
+    if (!rows.length) return null;
+    let p = 0, lp = 0, sales = 0, hasP = false, hasLp = false, main = null;
+    rows.forEach((r) => {
+      const pp = numberOrNaN(r['販売荒利高']); if (!Number.isNaN(pp)) { p += pp; hasP = true; }
+      const lpp = numberOrNaN(r['昨年荒利']); if (!Number.isNaN(lpp)) { lp += lpp; hasLp = true; }
+      const sv = numberOrNaN(r['売上実績']); if (!Number.isNaN(sv)) sales += sv;
+      const today = numberOrNaN(r['売上実績']) || 0, prev = numberOrNaN(r['前週売上']) || 0;
+      const diff = today - prev;
+      const lyp = numberOrNaN(r['昨年荒利']);
+      if (main === null || Math.abs(diff) > Math.abs(main.diff)) {
+        main = {
+          cat: r['ミニ部門名'], sub: r['品種名'], diff: diff,
+          pct: Number.isNaN(numberOrNaN(r['前週同曜日比'])) ? null : numberOrNaN(r['前週同曜日比']) - 100,
+          profit: numberOrNaN(r['販売荒利高']),
+          profitYoy: (!Number.isNaN(lyp) && lyp) ? numberOrNaN(r['販売荒利高']) / lyp * 100 : null
+        };
+      }
+    });
+    return { profit: hasP ? p : NaN, grossRate: sales ? p / sales * 100 : NaN, profitYoy: (hasLp && lp) ? p / lp * 100 : null, main: main };
+  };
+  const fmtMain = (m) => {
+    if (!m) return '<div class="sales-main-empty">該当なし</div>';
+    const cls = m.diff >= 0 ? 'num-good' : 'num-bad';
+    const pctStr = (m.pct === null || Number.isNaN(Number(m.pct))) ? '-' : (m.pct >= 0 ? '+' : '') + Number(m.pct).toFixed(1) + '%';
+    return '<span class="sales-main-name">' + escapeHtml(m.cat) + ' / ' + escapeHtml(m.sub) + '</span>' +
+      '<span class="' + cls + '">金額影響 ' + escapeHtml(fD(m.diff)) + '</span>' +
+      '<span class="sales-main-amount">' + escapeHtml(pctStr) + '</span>' +
+      '<span class="sales-main-amount">荒利 ' + escapeHtml(fY(m.profit)) + '</span>' +
+      '<span class="' + rCls(m.profitYoy) + '">荒利前年比 ' + escapeHtml(fR(m.profitYoy)) + '</span>';
+  };
+  const grossLine = (d) => d ? ('<div class="sales-gross-line">荒利 ' + fY(d.profit) + ' / 粗利率 ' + fR(d.grossRate) +
+    ' / 荒利前年比 <span class="' + rCls(d.profitYoy) + '">' + fR(d.profitYoy) + '</span></div>') : '';
+
+  const bumonBlock = (label, r, cd, which) => {
+    if (!r) return '';
+    const d = detail(cd, which);
+    return '<div class="sales-alert-bumon"><div class="sales-alert-bumon-head"><span>' + label + '</span><span>' +
+      '<span class="' + rCls(r['前週同曜日比']) + '">前週同曜日比 ' + fR(r['前週同曜日比']) + '</span> ' +
+      '<span class="' + rCls(r['昨年比']) + '">前年 ' + fR(r['昨年比']) + '</span> ' +
+      '<span class="' + rCls(r['予算比']) + '">予算 ' + fR(r['予算比']) + '</span> ' +
+      '<span class="sales-alert-amount">' + fY(r['前週同曜日実績']) + ' → ' + fY(r['売上実績']) + '</span>' +
+      '</span></div>' +
+      '<div class="sales-alert-main">' + fmtMain(d && d.main) + '</div>' +
+      grossLine(d) + '</div>';
+  };
+
+  const card = (s, positive) => {
+    const t = s.bumon['合計'] || s.bumon['全体'] || s.bumon['計'] || {};
+    const arrow = positive ? '▲' : '▼';
+    const cls = positive ? 'num-good' : 'num-bad';
+    const title = escapeHtml(s.name || '') + '：' +
+      '<span class="' + rCls(t['前週同曜日比']) + '">前週同曜日比 ' + fR(t['前週同曜日比']) + '</span> ' +
+      '<span class="' + rCls(t['昨年比']) + '">前年比 ' + fR(t['昨年比']) + '</span> ' +
+      '<span class="' + rCls(t['予算比']) + '">予算比 ' + fR(t['予算比']) + '</span>';
+    const desc = '<div style="font-size:13px;color:var(--muted)">合計　前週同曜日（' + escapeHtml(prevD) + '）' + fY(t['前週同曜日実績']) +
+      ' → 対象日 ' + fY(t['売上実績']) + ' / 予算 ' + fY(t['予算']) + ' / 前年同週 ' + fY(t['昨年実績']) + '</div>';
+    const breakdown = '<div class="sales-alert-breakdown">' +
+      bumonBlock('メンズ', s.bumon['メンズ'], s.cd, 'メンズ') +
+      bumonBlock('レディース', s.bumon['レディース'], s.cd, 'レディース') + '</div>';
+    return '<article class="card">' +
+      '<div class="meta"><span>' + escapeHtml(latest) + '</span><span>' + escapeHtml(s.zone || '') + '</span>' +
+      '<span class="' + cls + '" style="font-weight:800">' + arrow + ' #' + escapeHtml(s.rank) + ' ' + escapeHtml(s.name || '') + '　店舗売上</span></div>' +
+      '<div class="card-title">' + title + '</div>' +
+      desc + breakdown +
+      '</article>';
+  };
+
+  goodEl.innerHTML = good.length ? good.map((s) => card(s, true)).join('') : '<div class="empty">好調店舗データはまだありません。</div>';
+  badEl.innerHTML = bad.length ? bad.map((s) => card(s, false)).join('') : '<div class="empty">苦戦店舗データはまだありません。</div>';
 }
 
 // -- ニュース・タグ
