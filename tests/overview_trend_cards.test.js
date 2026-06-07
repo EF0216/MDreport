@@ -10,6 +10,7 @@ assert.match(html, /id="overviewTrendCards"/, 'important tab should include a tr
 assert.match(html, /overview-trend-grid/, 'important tab trend cards should have responsive grid CSS');
 assert.match(html, /overview-trend-card/, 'important tab trend cards should have card styling');
 assert.match(html, /overview-trend-axis/, 'trend cards should have date labels below each sparkline');
+assert.match(html, /overview-trend-compare/, 'trend cards should have a visible comparison-period line');
 assert.doesNotMatch(html, /background:\s*#111827/, 'overview trend cards should not use a floating dark panel background');
 assert.doesNotMatch(html, /border:\s*1px solid #273448/, 'overview trend cards should not use dark-panel borders');
 assert.match(html, /overview-trend-card[^}]*background:\s*#fff/, 'overview trend cards should use a light surface that fits the page');
@@ -17,6 +18,10 @@ assert.match(html, /overview-trend-card[^}]*background:\s*#fff/, 'overview trend
 assert.match(js, /function\s+renderOverviewTrendCards/, 'dashboard.js should render important-tab trend cards');
 assert.match(js, /function\s+buildOverviewTrendCards/, 'dashboard.js should build trend card metrics');
 assert.match(js, /function\s+sparklineSvg/, 'dashboard.js should render compact sparklines');
+assert.match(js, /前週同曜日/, 'daily overview comparison should name the same weekday in the previous week');
+assert.match(js, /前週累計/, 'weekly overview comparison should name the previous-week cumulative period');
+assert.match(js, /trendChip\(metricDelta\(current, compare, 'actual', true\), null, '%'\)/, 'sales delta chip should include percent units');
+assert.match(js, /trendChip\(metricDelta\(current, compare, 'budgetRatio', false\), null, 'pt'\)/, 'budget ratio delta chip should include point units');
 assert.match(js, /function\s+sparklineDateLabels/, 'dashboard.js should build compact date labels for sparklines');
 assert.match(js, /function\s+formatSparklineDate/, 'dashboard.js should format dates for trend card axes');
 assert.match(js, /function\s+overviewTemperatureContext/, 'dashboard.js should build national temperature forecast metrics');

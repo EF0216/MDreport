@@ -477,6 +477,7 @@ function overviewBumonContext(data) {
         periodLabel: ww.startDate + '～' + ww.endDate,
         current: Object.assign({ date: ww.key }, sumBumonMetrics(currentRows)),
         compare: Object.assign({ date: ww.compareKey }, sumBumonMetrics(compareRows)),
+        compareLabel: '比較: 前週累計 ' + formatSparklineDate(ww.compareStartDate) + '～' + formatSparklineDate(ww.compareEndDate),
         series: weeklySeries
       };
     }
@@ -485,11 +486,15 @@ function overviewBumonContext(data) {
   const currentIndex = current ? daily.findIndex((item) => item.date === current.date) : -1;
   const sameWeekday = current ? shiftDateString(current.date, -7) : '';
   const compare = daily.find((item) => item.date === sameWeekday) || (currentIndex > 0 ? daily[currentIndex - 1] : null);
+  const compareLabel = compare && compare.date
+    ? '比較: ' + (compare.date === sameWeekday ? '前週同曜日 ' : '直前実績 ') + formatSparklineDate(compare.date)
+    : '比較: -';
   return {
     labelSuffix: '本日',
     periodLabel: current ? current.date : '-',
     current,
     compare,
+    compareLabel,
     series: daily.slice(-14)
   };
 }
@@ -617,12 +622,13 @@ function metricDelta(current, compare, field, asRate) {
   return asRate ? (c / p * 100 - 100) : c - p;
 }
 
-function trendChip(delta, fixedLabel) {
+function trendChip(delta, fixedLabel, suffix) {
   if (fixedLabel) return { label: fixedLabel, tone: 'neutral' };
   const n = numberOrNaN(delta);
+  const unit = suffix || '';
   if (Number.isNaN(n)) return { label: '-', tone: 'neutral' };
-  if (n === 0) return { label: '±0.0', tone: 'neutral' };
-  return { label: (n > 0 ? '▲ +' : '▼ ') + n.toFixed(1), tone: n > 0 ? 'up' : 'down' };
+  if (n === 0) return { label: '±0.0' + unit, tone: 'neutral' };
+  return { label: (n > 0 ? '▲ +' : '▼ ') + n.toFixed(1) + unit, tone: n > 0 ? 'up' : 'down' };
 }
 
 function formatSparklineScaleLabel(value, scale) {
@@ -748,15 +754,16 @@ function buildOverviewTrendCards(data) {
   const temperature = overviewTemperatureContext(data);
   const salesDates = sparklineDateLabels(series);
   const temperatureDates = sparklineDateLabels(temperature.series || [], 7);
-  const salesDelta = trendChip(metricDelta(current, compare, 'actual', true));
-  const budgetDelta = trendChip(metricDelta(current, compare, 'budgetRatio', false));
-  const yearDelta = trendChip(metricDelta(current, compare, 'yearRatio', false));
-  const grossDelta = trendChip(metricDelta(current, compare, 'grossRate', false));
+  const compareLabel = ctx.compareLabel || '';
+  const salesDelta = trendChip(metricDelta(current, compare, 'actual', true), null, '%');
+  const budgetDelta = trendChip(metricDelta(current, compare, 'budgetRatio', false), null, 'pt');
+  const yearDelta = trendChip(metricDelta(current, compare, 'yearRatio', false), null, 'pt');
+  const grossDelta = trendChip(metricDelta(current, compare, 'grossRate', false), null, 'pt');
   return [
-    { label: 'レッグウェア売上(' + (state.dateMode === 'weekly' ? '当週' : '最新') + ')', value: formatCompactYen(current.actual), unit: '', chip: salesDelta, foot: salesOverviewFoot(data, current), tone: 'down', series: series.map((item) => item.actual), scale: { type: 'yen' }, dates: salesDates },
-    { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
-    { label: '前年同週比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '前年同週同曜日', tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
-    { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
+    { label: 'レッグウェア売上(' + (state.dateMode === 'weekly' ? '当週' : '最新') + ')', value: formatCompactYen(current.actual), unit: '', chip: salesDelta, foot: salesOverviewFoot(data, current), compareLabel, tone: 'down', series: series.map((item) => item.actual), scale: { type: 'yen' }, dates: salesDates },
+    { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', compareLabel, tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
+    { label: '前年同週比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '前年同週同曜日', compareLabel, tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
+    { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), compareLabel, tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
     { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, temperatureForecastChipLabel(temperature)), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
   ];
 }
@@ -775,6 +782,7 @@ function renderOverviewTrendCards(data) {
       '<div class="overview-trend-axis">' + (card.dates || []).map((label) => '<span>' + escapeHtml(label) + '</span>').join('') + '</div>' +
       (card.legendHtml || '') +
       '<div class="overview-trend-foot">' + escapeHtml(card.foot) + '</div>' +
+      (card.compareLabel ? '<div class="overview-trend-compare">' + escapeHtml(card.compareLabel) + '</div>' : '') +
       '</article>';
   }).join('');
 }

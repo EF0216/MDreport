@@ -75,6 +75,12 @@ const cards = api.buildOverviewTrendCards({
 
 assert.strictEqual(cards[0].label, 'レッグウェア売上(最新)');
 assert.strictEqual(cards[0].value, '581万');
+assert.match(cards[0].chip.label, /%$/, 'sales delta chip should show percent units');
+assert.match(cards[1].chip.label, /pt$/, 'budget ratio delta chip should show point units');
+assert.match(cards[2].chip.label, /pt$/, 'year ratio delta chip should show point units');
+assert.match(cards[3].chip.label, /pt$/, 'gross margin delta chip should show point units');
+assert.strictEqual(cards[0].compareLabel, '比較: 前週同曜日 5/29');
+assert.strictEqual(cards[1].compareLabel, '比較: 前週同曜日 5/29');
 assert.match(cards[0].foot, /6\/5 合計/);
 assert.match(cards[0].foot, /レディース285万/);
 assert.match(cards[0].foot, /メンズ296万/);
@@ -87,6 +93,29 @@ assert.strictEqual(
   '2日先まで',
   'temperature forecast chip should describe the forecast horizon instead of an unexplained count'
 );
+
+api.state.dateMode = 'weekly';
+api.state.weekKey = '2026-06-01';
+api.state.weekWindows = [{
+  key: '2026-06-01',
+  label: '6月1日週',
+  startDate: '2026-06-01',
+  endDate: '2026-06-07',
+  compareKey: '2026-05-25',
+  compareStartDate: '2026-05-25',
+  compareEndDate: '2026-05-31'
+}];
+const weeklyCards = api.buildOverviewTrendCards({
+  weatherLatest: weatherData.weatherLatest,
+  weatherTrend: weatherData.weatherTrend,
+  legwearBumon: [
+    { date: '2026-06-05', zone_code: 0, zone_name: '全社計', '部門CD': 187, '部門名': 'レディースレッグウェア', '売上予算': 1000, '売上実績': 900, '前年同週同曜日実績': 800, '販売荒利高': 270, '前年荒利高': 240 },
+    { date: '2026-05-29', zone_code: 0, zone_name: '全社計', '部門CD': 187, '部門名': 'レディースレッグウェア', '売上予算': 1000, '売上実績': 1000, '前年同週同曜日実績': 900, '販売荒利高': 300, '前年荒利高': 270 }
+  ]
+});
+assert.strictEqual(weeklyCards[0].compareLabel, '比較: 前週累計 5/25～5/31');
+assert.match(weeklyCards[0].chip.label, /%$/, 'weekly sales delta chip should also show percent units');
+assert.match(weeklyCards[1].chip.label, /pt$/, 'weekly budget ratio delta chip should also show point units');
 
 const salesScaleSvg = api.sparklineSvg([5000000, 5808353, 6100000], 'down', { type: 'yen' });
 assert.match(salesScaleSvg, /overview-scale-grid/, 'compact trend charts should include horizontal scale gridlines');
