@@ -77,6 +77,7 @@ window.__dashboardTest = { state, renderDashboard };
 });
 
 const currentDate = '2026-06-06';
+const latestWeatherDate = '2026-06-07';
 const prevDate = '2026-05-30';
 const zones = [
   { name: '高予算A', actual: 140000, budget: 100000, prev: 300000, ly: 120000 },
@@ -118,6 +119,20 @@ context.window.__dashboardTest.state.dateMode = 'daily';
 context.window.__dashboardTest.renderDashboard({
   updatedAt: 'test',
   weatherLatest: zones.map((zone, index) => ({
+    date: latestWeatherDate,
+    zone: zone.name,
+    area_name: zone.name,
+    max_temp: 30.4 + index,
+    min_temp: 25.1 + index,
+    rain_mm: 9.9,
+    rain_vs_last_week: 9.9,
+    rain_vs_last_year_same_weekday: 9.9,
+    temp_vs_last_week: 9.9,
+    temp_vs_last_year_same_weekday: 9.9,
+    humidity_avg: 99,
+    humidity_vs_last_year_same_weekday: 9.9
+  })),
+  weatherDaily: zones.map((zone, index) => ({
     date: currentDate,
     zone: zone.name,
     area_name: zone.name,
@@ -160,6 +175,7 @@ assert.match(html, /気温/);
 assert.match(html, /23\.4\/17\.8℃/);
 assert.match(html, /湿度/);
 assert.match(html, /73\.0%/);
+assert.doesNotMatch(html, /30\.4\/25\.1/);
 assert.doesNotMatch(html, /降水前週差/);
 
 const firstHigh = html.indexOf('高予算A');

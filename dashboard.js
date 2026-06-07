@@ -193,8 +193,8 @@ function renderDashboard(data) {
       });
     };
   })();
-  var salesWeatherItems=weatherTrendItems.length?enrichWithDaily(weatherTrendItems):weatherItems;
-  var salesAlertWeatherItems=weatherItems;
+  var salesWeatherItems=weatherTrendItems.length?enrichWithDaily(weatherTrendItems):(weatherDailyItems.length?weatherDailyItems:weatherItems);
+  var salesAlertWeatherItems=salesWeatherItems;
   if(state.dateMode==='weekly'){
     var wwW=currentWeekWindow();
     if(wwW){
@@ -1531,10 +1531,15 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     currentDates=[todayD];prevDates=[prevD];
   }
 
-  // weatherByZone（日付フィルタなし、GAS版に準拠）
+  var scopedWeatherItems=weatherItems||[];
+  if(state.dateMode!=='weekly'){
+    var datedWeatherItems=scopedWeatherItems.filter(function(w){return w&&w.date;});
+    var matchedWeatherItems=scopedWeatherItems.filter(function(w){return w&&(!w.date||w.date===todayD);});
+    scopedWeatherItems=(matchedWeatherItems.length||!datedWeatherItems.length)?matchedWeatherItems:[];
+  }
   var weatherByZone={};
-  (weatherItems||[]).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
-  var nationalWeather=buildNationalAvgWeather(weatherItems||[]);
+  scopedWeatherItems.forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
+  var nationalWeather=buildNationalAvgWeather(scopedWeatherItems);
   if(nationalWeather){
     weatherByZone['全社計']=nationalWeather;
     weatherByZone['全国']=nationalWeather;
