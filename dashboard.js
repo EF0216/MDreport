@@ -503,6 +503,11 @@ function temperatureRangeLabel(temp) {
   return '最高' + formatDegreeShort(temp.high) + ' / 最低' + formatDegreeShort(temp.low);
 }
 
+function temperatureForecastChipLabel(temp) {
+  const count = Number(temp && temp.forecastCount || 0);
+  return count > 0 ? formatNum(count) + '日先まで' : '実績のみ';
+}
+
 function lastYearTemperatureValue(value, row) {
   const n = numberOrNaN(value);
   if (Number.isNaN(n)) return NaN;
@@ -631,11 +636,11 @@ function formatSparklineScaleLabel(value, scale) {
 function sparklineSvg(values, tone, scale) {
   const nums = (values || []).map((v) => numberOrNaN(v)).filter((v) => !Number.isNaN(v));
   const stroke = tone === 'down' ? '#4f7bdc' : tone === 'alert' ? '#f59e0b' : tone === 'profit' ? '#8b5cf6' : '#18a77f';
-  if (nums.length < 2) return '<svg viewBox="0 0 160 54" aria-hidden="true"><path d="M48 42 L156 42" stroke="' + stroke + '" stroke-width="3" fill="none" opacity=".75"/></svg>';
+  if (nums.length < 2) return '<svg viewBox="0 0 320 54" aria-hidden="true"><path d="M74 42 L312 42" stroke="' + stroke + '" stroke-width="3" fill="none" opacity=".75"/></svg>';
   const min = Math.min.apply(null, nums);
   const max = Math.max.apply(null, nums);
   const range = Math.max(1, max - min);
-  const left = 48, right = 156, top = 8, bottom = 42;
+  const left = 74, right = 312, top = 8, bottom = 42;
   const yFor = (value) => bottom - ((value - min) / range) * (bottom - top);
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => {
@@ -649,7 +654,7 @@ function sparklineSvg(values, tone, scale) {
     return x.toFixed(1) + ',' + y.toFixed(1);
   });
   const area = [left + ',50'].concat(points).concat([right + ',50']).join(' ');
-  return '<svg viewBox="0 0 160 54" preserveAspectRatio="none" aria-hidden="true">' +
+  return '<svg viewBox="0 0 320 54" preserveAspectRatio="none" aria-hidden="true">' +
     grid +
     '<polygon points="' + area + '" fill="' + stroke + '" opacity=".13"></polygon>' +
     '<polyline points="' + points.join(' ') + '" fill="none" stroke="' + stroke + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>' +
@@ -680,7 +685,7 @@ function temperatureSparklineSvg(series) {
   const min = Math.floor(Math.min.apply(null, allValues) / 5) * 5;
   const max = Math.ceil(Math.max.apply(null, allValues) / 5) * 5;
   const range = Math.max(1, max - min);
-  const left = 18, right = 156, top = 8, bottom = 64;
+  const left = 70, right = 708, top = 8, bottom = 64;
   const x = (index) => left + (index / Math.max(1, rows.length - 1)) * (right - left);
   const y = (value) => bottom - ((value - min) / range) * (bottom - top);
   const line = (field, color, dashed) => {
@@ -703,7 +708,7 @@ function temperatureSparklineSvg(series) {
     if (Number.isNaN(value)) return '';
     return '<circle cx="' + x(index).toFixed(1) + '" cy="' + y(value).toFixed(1) + '" r="2.5" fill="#f59e0b"></circle>';
   }).join('');
-  return '<svg viewBox="0 0 160 72" preserveAspectRatio="none" aria-hidden="true">' +
+  return '<svg viewBox="0 0 720 72" preserveAspectRatio="none" aria-hidden="true">' +
     grid +
     line('lastYearHigh', '#8f6bff', true) +
     line('lastYearLow', '#96a4ba', true) +
@@ -752,7 +757,7 @@ function buildOverviewTrendCards(data) {
     { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
     { label: '前年同週比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '前年同週同曜日', tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
     { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
-    { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, '予報' + formatNum(temperature.forecastCount) + '日'), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
+    { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, temperatureForecastChipLabel(temperature)), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
   ];
 }
 

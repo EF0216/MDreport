@@ -21,6 +21,7 @@ assert.match(js, /function\s+sparklineDateLabels/, 'dashboard.js should build co
 assert.match(js, /function\s+formatSparklineDate/, 'dashboard.js should format dates for trend card axes');
 assert.match(js, /function\s+overviewTemperatureContext/, 'dashboard.js should build national temperature forecast metrics');
 assert.match(js, /function\s+temperatureRangeLabel/, 'dashboard.js should render national high and low temperatures');
+assert.match(js, /function\s+temperatureForecastChipLabel/, 'temperature KPI should explain the forecast horizon chip');
 assert.match(js, /function\s+temperatureSparklineSvg/, 'temperature KPI should render a multi-series temperature chart');
 assert.match(js, /function\s+temperatureTrendLegend/, 'temperature KPI should render a legend for the multi-series chart');
 assert.match(js, /全国気温予報/, 'overview trend cards should show forecast temperature, not alert count');
@@ -33,6 +34,8 @@ assert.match(js, /昨年最低/, 'temperature chart legend should include last-y
 assert.match(js, /isForecast/, 'temperature chart should mark forecast dates');
 assert.match(js, /lastYearHigh/, 'temperature chart should plot last-year high temperature');
 assert.match(js, /lastYearLow/, 'temperature chart should plot last-year low temperature');
+assert.doesNotMatch(js, /'予報'\s*\+\s*formatNum\(temperature\.forecastCount\)\s*\+\s*'日'/, 'temperature KPI chip should not show an unexplained forecast count');
+assert.match(js, /日先まで/, 'temperature KPI chip should label the forecast count as a horizon');
 assert.doesNotMatch(js, /label:\s*'気温アラート'/, 'overview trend cards should not use weather alert count as the weather KPI');
 assert.match(js, /overview-trend-axis/, 'renderer should output date labels below the line graph');
 assert.match(js, /renderOverviewTrendCards\(data\)/, 'renderDashboard should add trend cards to the original important tab');

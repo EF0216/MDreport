@@ -82,9 +82,15 @@ assert(
   cards[4].dates.length >= 5,
   'wide temperature card should show more date labels than compact sales cards'
 );
+assert.strictEqual(
+  cards[4].chip.label,
+  '2日先まで',
+  'temperature forecast chip should describe the forecast horizon instead of an unexplained count'
+);
 
 const salesScaleSvg = api.sparklineSvg([5000000, 5808353, 6100000], 'down', { type: 'yen' });
 assert.match(salesScaleSvg, /overview-scale-grid/, 'compact trend charts should include horizontal scale gridlines');
+assert.match(salesScaleSvg, /viewBox="0 0 320 54"/, 'compact trend charts should use a wide viewBox so scale labels are not horizontally crushed');
 assert.match(salesScaleSvg, /万/, 'sales trend scale should use compact yen labels');
 assert.match(salesScaleSvg, /font-size="9"/, 'compact trend scale labels should be large enough to read');
 assert.match(salesScaleSvg, /fill="#334e68"/, 'compact trend scale labels should use a readable light-theme color');
@@ -94,4 +100,6 @@ assert.match(salesScaleSvg, /paint-order="stroke"/, 'compact trend scale labels 
 
 const pctScaleSvg = api.sparklineSvg([95.2, 97.9, 107.3], 'good', { type: 'pct' });
 assert.match(pctScaleSvg, /%/, 'rate trend scale should include percent labels');
-assert.match(api.temperatureSparklineSvg(temperature.series), /font-size="9"/, 'temperature trend scale labels should also be large enough to read');
+const temperatureSvg = api.temperatureSparklineSvg(temperature.series);
+assert.match(temperatureSvg, /viewBox="0 0 720 72"/, 'temperature trend chart should use a wide viewBox so degree labels are not horizontally crushed');
+assert.match(temperatureSvg, /font-size="9"/, 'temperature trend scale labels should also be large enough to read');
