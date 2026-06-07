@@ -10,6 +10,9 @@ assert.match(html, /id="overviewTrendCards"/, 'important tab should include a tr
 assert.match(html, /overview-trend-grid/, 'important tab trend cards should have responsive grid CSS');
 assert.match(html, /overview-trend-card/, 'important tab trend cards should have card styling');
 assert.match(html, /overview-trend-axis/, 'trend cards should have date labels below each sparkline');
+assert.doesNotMatch(html, /background:\s*#111827/, 'overview trend cards should not use a floating dark panel background');
+assert.doesNotMatch(html, /border:\s*1px solid #273448/, 'overview trend cards should not use dark-panel borders');
+assert.match(html, /overview-trend-card[^}]*background:\s*#fff/, 'overview trend cards should use a light surface that fits the page');
 
 assert.match(js, /function\s+renderOverviewTrendCards/, 'dashboard.js should render important-tab trend cards');
 assert.match(js, /function\s+buildOverviewTrendCards/, 'dashboard.js should build trend card metrics');

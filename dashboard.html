@@ -46,29 +46,29 @@
     .card,.list-item { background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:16px; }
     .card.important { border-color:#f59e0b; background:#fffaf0; }
     .overview-trend-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:10px 0 18px; }
-    .overview-trend-card { min-height:172px; border:1px solid #273448; border-radius:8px; background:#111827; color:#eef4ff; box-shadow:0 10px 26px rgba(15,23,42,.18); padding:16px 18px 14px; overflow:hidden; }
+    .overview-trend-card { min-height:172px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--text); box-shadow:var(--shadow); padding:16px 18px 14px; overflow:hidden; }
     .overview-trend-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
-    .overview-trend-label { color:#aeb8c8; font-size:14px; font-weight:900; }
+    .overview-trend-label { color:#31506d; font-size:14px; font-weight:900; }
     .overview-trend-chip { display:inline-flex; align-items:center; min-height:28px; border-radius:8px; padding:0 10px; font-size:13px; font-weight:900; white-space:nowrap; }
-    .overview-trend-chip.up { background:#0f3b2b; color:#89e6ad; }
-    .overview-trend-chip.down { background:#532525; color:#ffa09c; }
-    .overview-trend-chip.neutral { background:#4a3416; color:#ffd58a; }
-    .overview-trend-value { margin:2px 0 8px; color:#fff; font-size:30px; font-weight:950; line-height:1.1; font-variant-numeric:tabular-nums; }
-    .overview-trend-unit { margin-left:2px; color:#aeb8c8; font-size:17px; font-weight:900; }
+    .overview-trend-chip.up { background:#e4f7ee; color:#0a6e3f; }
+    .overview-trend-chip.down { background:#fde8e7; color:#b42318; }
+    .overview-trend-chip.neutral { background:#fff4d9; color:#8a5b00; }
+    .overview-trend-value { margin:2px 0 8px; color:#102a43; font-size:30px; font-weight:950; line-height:1.1; font-variant-numeric:tabular-nums; }
+    .overview-trend-unit { margin-left:2px; color:#62748a; font-size:17px; font-weight:900; }
     .overview-trend-chart { height:62px; margin:4px -4px 2px; }
     .overview-trend-chart svg { display:block; width:100%; height:100%; }
     .overview-trend-card.temperature-card { grid-column:span 2; }
     .overview-trend-card.temperature-card .overview-trend-chart { height:82px; margin-top:6px; }
     .overview-trend-axis { display:flex; justify-content:space-between; gap:8px; margin:0 0 8px; color:#748195; font-size:10px; font-weight:850; line-height:1.2; }
     .overview-trend-axis span { min-width:0; white-space:nowrap; }
-    .overview-trend-temp-legend { display:flex; flex-wrap:wrap; gap:10px; margin:2px 0 8px; color:#aeb8c8; font-size:11px; font-weight:850; }
+    .overview-trend-temp-legend { display:flex; flex-wrap:wrap; gap:10px; margin:2px 0 8px; color:#62748a; font-size:11px; font-weight:850; }
     .overview-trend-temp-legend span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
     .overview-temp-key { width:18px; height:3px; border-radius:999px; background:#6fa6ff; }
     .overview-temp-key.low { background:#9aa7bb; }
     .overview-temp-key.last-high { background:repeating-linear-gradient(to right,#8f6bff 0,#8f6bff 5px,transparent 5px,transparent 9px); }
     .overview-temp-key.last-low { background:repeating-linear-gradient(to right,#9aa7bb 0,#9aa7bb 5px,transparent 5px,transparent 9px); }
     .overview-temp-key.forecast { width:9px; height:9px; background:#f59e0b; border-radius:999px; }
-    .overview-trend-foot { color:#aeb8c8; font-size:13px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .overview-trend-foot { color:#425b76; font-size:13px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .card-title { margin-bottom:8px; font-weight:800; color:#102a43; }
     .meta { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; color:var(--muted); font-size:13px; }
     .importance { color:#92400e; font-weight:800; }

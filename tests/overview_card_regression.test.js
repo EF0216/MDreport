@@ -87,8 +87,10 @@ const salesScaleSvg = api.sparklineSvg([5000000, 5808353, 6100000], 'down', { ty
 assert.match(salesScaleSvg, /overview-scale-grid/, 'compact trend charts should include horizontal scale gridlines');
 assert.match(salesScaleSvg, /万/, 'sales trend scale should use compact yen labels');
 assert.match(salesScaleSvg, /font-size="9"/, 'compact trend scale labels should be large enough to read');
-assert.match(salesScaleSvg, /fill="#dbeafe"/, 'compact trend scale labels should use a brighter color');
-assert.match(salesScaleSvg, /paint-order="stroke"/, 'compact trend scale labels should have a dark outline for contrast');
+assert.match(salesScaleSvg, /fill="#334e68"/, 'compact trend scale labels should use a readable light-theme color');
+assert.match(salesScaleSvg, /stroke="#ffffff"/, 'compact trend scale labels should keep a light outline for contrast');
+assert.match(salesScaleSvg, /stroke="#d8e2ec"/, 'compact trend gridlines should use the page border color');
+assert.match(salesScaleSvg, /paint-order="stroke"/, 'compact trend scale labels should preserve an outline for contrast');
 
 const pctScaleSvg = api.sparklineSvg([95.2, 97.9, 107.3], 'good', { type: 'pct' });
 assert.match(pctScaleSvg, /%/, 'rate trend scale should include percent labels');

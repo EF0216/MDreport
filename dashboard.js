@@ -630,7 +630,7 @@ function formatSparklineScaleLabel(value, scale) {
 
 function sparklineSvg(values, tone, scale) {
   const nums = (values || []).map((v) => numberOrNaN(v)).filter((v) => !Number.isNaN(v));
-  const stroke = tone === 'down' ? '#7fa7ff' : tone === 'alert' ? '#f7b547' : tone === 'profit' ? '#c69af7' : '#5ed7af';
+  const stroke = tone === 'down' ? '#4f7bdc' : tone === 'alert' ? '#f59e0b' : tone === 'profit' ? '#8b5cf6' : '#18a77f';
   if (nums.length < 2) return '<svg viewBox="0 0 160 54" aria-hidden="true"><path d="M48 42 L156 42" stroke="' + stroke + '" stroke-width="3" fill="none" opacity=".75"/></svg>';
   const min = Math.min.apply(null, nums);
   const max = Math.max.apply(null, nums);
@@ -640,8 +640,8 @@ function sparklineSvg(values, tone, scale) {
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => {
     const yy = yFor(tick).toFixed(1);
-    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#273448" stroke-width="1" opacity=".86"></line>' +
-      '<text class="overview-scale-label" x="2" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#dbeafe" font-size="9" font-weight="900" stroke="#111827" stroke-width="1.2" paint-order="stroke">' + escapeHtml(formatSparklineScaleLabel(tick, scale)) + '</text>';
+    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#d8e2ec" stroke-width="1" opacity=".92"></line>' +
+      '<text class="overview-scale-label" x="2" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#334e68" font-size="9" font-weight="900" stroke="#ffffff" stroke-width="1.1" paint-order="stroke">' + escapeHtml(formatSparklineScaleLabel(tick, scale)) + '</text>';
   }).join('');
   const points = nums.map((value, index) => {
     const x = left + (index / Math.max(1, nums.length - 1)) * (right - left);
@@ -694,8 +694,8 @@ function temperatureSparklineSvg(series) {
   const ticks = [max, Math.round((max + min) / 2), min];
   const grid = ticks.map((tick) => {
     const yy = y(tick).toFixed(1);
-    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#273448" stroke-width="1"></line>' +
-      '<text class="overview-scale-label" x="1" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#dbeafe" font-size="9" font-weight="900" stroke="#111827" stroke-width="1.2" paint-order="stroke">' + tick + '℃</text>';
+    return '<line class="overview-scale-grid" x1="' + left + '" y1="' + yy + '" x2="' + right + '" y2="' + yy + '" stroke="#d8e2ec" stroke-width="1"></line>' +
+      '<text class="overview-scale-label" x="1" y="' + (Number(yy) + 3.2).toFixed(1) + '" fill="#334e68" font-size="9" font-weight="900" stroke="#ffffff" stroke-width="1.1" paint-order="stroke">' + tick + '℃</text>';
   }).join('');
   const forecastDots = rows.map((item, index) => {
     if (!item.isForecast) return '';
