@@ -117,7 +117,20 @@ const legwearBumon = zones.flatMap((zone, index) => ([
 context.window.__dashboardTest.state.dateMode = 'daily';
 context.window.__dashboardTest.renderDashboard({
   updatedAt: 'test',
-  weatherLatest: [],
+  weatherLatest: zones.map((zone, index) => ({
+    date: currentDate,
+    zone: zone.name,
+    area_name: zone.name,
+    max_temp: 23.4 + index,
+    min_temp: 17.8 + index,
+    rain_mm: 1.2 + index,
+    rain_vs_last_week: -0.8,
+    rain_vs_last_year_same_weekday: 0.4,
+    temp_vs_last_week: -1.7,
+    temp_vs_last_year_same_weekday: 2.5,
+    humidity_avg: 73 + index,
+    humidity_vs_last_year_same_weekday: 4.2
+  })),
   weatherTrend: [],
   legwearBumon,
   legwearCategory: [],
@@ -142,6 +155,11 @@ assert.match(html, /予算差 \+40,000円/);
 assert.match(html, /予算差 -40,000円/);
 assert.match(html, /予算比上位/);
 assert.match(html, /予算比下位/);
+assert.match(html, /気温/);
+assert.match(html, /最高/);
+assert.match(html, /23\.4℃/);
+assert.match(html, /湿度/);
+assert.match(html, /73\.0%/);
 
 const firstHigh = html.indexOf('高予算A');
 const firstLow = html.indexOf('低予算A');

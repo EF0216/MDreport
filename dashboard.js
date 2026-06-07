@@ -1138,6 +1138,44 @@ function buildNationalAvgWeather(items) {
   };
 }
 
+function renderWeatherKpiColumn(w) {
+  if (!w) return '';
+  var maxTemp = numberOrNaN(w.max_temp);
+  if (Number.isNaN(maxTemp)) return '';
+  var minTemp = numberOrNaN(w.min_temp);
+  var hasLW = w.temp_vs_last_week !== '' && w.temp_vs_last_week !== null && typeof w.temp_vs_last_week !== 'undefined';
+  var tempDiff = numberOrNaN(hasLW ? w.temp_vs_last_week : w.temp_vs_yesterday);
+  var yearTempDiff = numberOrNaN(w.temp_vs_last_year_same_weekday);
+  var rainWeekDiff = numberOrNaN(w.rain_vs_last_week);
+  var rainYearDiff = numberOrNaN(w.rain_vs_last_year_same_weekday);
+  var humidityYearDiff = numberOrNaN(w.humidity_vs_last_year_same_weekday);
+  var formatWeatherValue = function(value, unit) {
+    var n = numberOrNaN(value);
+    return Number.isNaN(n) ? '-' : n.toFixed(1) + unit;
+  };
+  var formatSignedWeatherValue = function(value, unit) {
+    var n = numberOrNaN(value);
+    if (Number.isNaN(n)) return '-';
+    var sign = n === 0 ? '±' : n > 0 ? '+' : '';
+    return sign + n.toFixed(1) + unit;
+  };
+  var signedWeatherDiffClass = function(value) {
+    var n = numberOrNaN(value);
+    return Number.isNaN(n) || n === 0 ? '' : n > 0 ? 'num-bad' : 'num-good';
+  };
+  return '<div class="zs-col"><div class="zs-col-head">気温</div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l '+tempCompareClass(w.max_temp,w.last_year_max_temp)+'">最高</span><span class="zs-kpi-v">'+formatWeatherValue(maxTemp,'℃')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l '+tempCompareClass(w.min_temp,w.last_year_min_temp)+'">最低</span><span class="zs-kpi-v">'+formatWeatherValue(minTemp,'℃')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'前週差':'前日差')+'</span><span class="zs-kpi-v '+tempDiffClass(tempDiff)+'">'+formatSignedWeatherValue(tempDiff,'℃')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v '+tempDiffClass(yearTempDiff)+'">'+formatSignedWeatherValue(yearTempDiff,'℃')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">降水量</span><span class="zs-kpi-v">'+formatWeatherValue(w.rain_mm,'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">降水前週差</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainWeekDiff)+'">'+formatSignedWeatherValue(rainWeekDiff,'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">降水前年差</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainYearDiff)+'">'+formatSignedWeatherValue(rainYearDiff,'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">湿度</span><span class="zs-kpi-v">'+formatHumidity(w.humidity_avg)+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">湿度前年差</span><span class="zs-kpi-v '+humidityDiffClass(humidityYearDiff)+'">'+formatSignedHumidityDiff(humidityYearDiff)+'</span></div>'+
+    '</div>';
+}
+
 function renderWeather(items, trendItems, zoneOrder) {
   var national=buildNationalAvgWeather(items);
   var allItems=national?[national].concat(items):items;
@@ -1465,6 +1503,11 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   // weatherByZone（日付フィルタなし、GAS版に準拠）
   var weatherByZone={};
   (weatherItems||[]).forEach(function(w){if(w.zone)weatherByZone[w.zone]=w;});
+  var nationalWeather=buildNationalAvgWeather(weatherItems||[]);
+  if(nationalWeather){
+    weatherByZone['全社計']=nationalWeather;
+    weatherByZone['全国']=nationalWeather;
+  }
   var allTempDiffs=Object.values(weatherByZone).map(function(w){var hasLW=w.temp_vs_last_week!==''&&w.temp_vs_last_week!==null&&typeof w.temp_vs_last_week!=='undefined';return hasLW?Number(w.temp_vs_last_week):null;}).filter(function(v){return v!==null&&!Number.isNaN(v);});
   var avgTempDiff=allTempDiffs.length?allTempDiffs.reduce(function(a,b){return a+b;},0)/allTempDiffs.length:null;
 
@@ -1604,12 +1647,13 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     var pct=zPrev[z]?(zToday[z]-zPrev[z])/zPrev[z]*100:null;
     var budgetRatio=td.totalBudget?td.total/td.totalBudget*100:null;
     var yoy=td.totalLy?td.total/td.totalLy*100:null;
-    var w=weatherByZone[z]||{};
+    var weather=weatherByZone[z]||null;
+    var w=weather||{};
     var hasLW=w.temp_vs_last_week!==''&&w.temp_vs_last_week!==null&&typeof w.temp_vs_last_week!=='undefined';
     var tempDiff=Number(hasLW?w.temp_vs_last_week:(w.temp_vs_yesterday||0));
     var tempCompareLabel=hasLW?'前週差':'前日差';
     var direction=budgetRatio!==null&&budgetRatio>=100?'up':'down';
-    return{zone:z,today:zToday[z],prev:zPrev[z],pct:pct,tempDiff:tempDiff,tempCompareLabel:tempCompareLabel,
+    return{zone:z,today:zToday[z],prev:zPrev[z],pct:pct,tempDiff:tempDiff,tempCompareLabel:tempCompareLabel,weather:weather,
       todayMens:td.mens||0,prevMens:pd.mens||0,budgetMens:td.mensBudget||0,lyMens:td.mensLy||0,profitMens:td.mensProfit||0,lyProfitMens:td.mensLyProfit||0,
       todayLadies:td.ladies||0,prevLadies:pd.ladies||0,budgetLadies:td.ladiesBudget||0,lyLadies:td.ladiesLy||0,profitLadies:td.ladiesProfit||0,lyProfitLadies:td.ladiesLyProfit||0,
       budgetTotal:td.totalBudget||0,lyTotal:td.totalLy||0,profitTotal:td.totalProfit||0,lyProfitTotal:td.totalLyProfit||0,
@@ -1645,6 +1689,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     }
     alerts.push({type:isUp?'zone_budget_good':'zone_budget_bad',zone:z.zone,pct:z.pct,today:z.today,prev:z.prev,tempNote:tempNote,todayD:todayD,prevD:prevD,
       compareLabel:comparison.label,compareRateLabel:comparison.rateLabel,compareDiffLabel:comparison.diffLabel,
+      weather:z.weather,
       todayMens:z.todayMens,prevMens:z.prevMens,budgetMens:z.budgetMens,lyMens:z.lyMens,mensYoy:z.mensYoy,mensBudgetRatio:z.mensBudgetRatio,
       profitMens:z.profitMens,lyProfitMens:z.lyProfitMens,grossRateMens:z.grossRateMens,profitYoyMens:z.profitYoyMens,
       todayLadies:z.todayLadies,prevLadies:z.prevLadies,budgetLadies:z.budgetLadies,lyLadies:z.lyLadies,ladiesYoy:z.ladiesYoy,ladiesBudgetRatio:z.ladiesBudgetRatio,
@@ -1725,6 +1770,8 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
       ?escapeHtml(a.zone)+'　'+escapeHtml(a.budgetRankType||'ゾーン売上')
       :escapeHtml(a.部門名)+' / '+escapeHtml(a.カテゴリ名)+'（全社計）';
     var judgment=isZone?'<div class="sales-judgment '+escapeAttribute(cls||'')+'">'+escapeHtml(a.budgetRankType||'ゾーン')+' / '+escapeHtml(a.compareRateLabel)+' '+escapeHtml(pctStr)+'</div>':'';
+    var weatherHtml=isZone&&a.weather?renderWeatherKpiColumn(a.weather):'';
+    var weatherBlock=weatherHtml?'<div class="sales-alert-weather">'+weatherHtml+'</div>':'';
     var bumonBreakdown=isZone?'<div class="sales-alert-breakdown">'+
       '<div class="sales-alert-bumon"><div class="sales-alert-bumon-head"><span>メンズ</span><span>'+
         '<span class="'+pCls2(a.todayMens,a.prevMens)+'">'+escapeHtml(a.compareLabel)+' '+fR(a.prevMens?(a.todayMens-a.prevMens)/a.prevMens*100:null)+'</span> '+
@@ -1777,7 +1824,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     return'<article class="card">'+
       '<div class="meta"><span>'+escapeHtml(a.todayD)+'</span><span>'+(isZone?'ゾーン':'サブカテゴリ')+'</span><span class="'+cls+'" style="font-weight:800">'+arrow+' '+label+'</span></div>'+
       '<div class="card-title">'+title+'</div>'+
-      (isZone?'<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(a.prev)+' → 対象日 '+fY(a.today)+' / 予算 '+fY(a.budgetTotal)+' / 予算差 '+escapeHtml(budgetGapStr)+' / 前年同週 '+fY(a.lyTotal)+'</div>'+grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy)+judgment+bumonBreakdown+(a.tempNote?'<div class="action" style="font-size:12px;margin-top:6px">🌡️ '+escapeHtml(a.tempNote)+'</div>':''):subcatMetrics+subcatTempBlock+subcatZoneBlock)+
+      (isZone?'<div style="font-size:13px;color:var(--muted)">合計　'+escapeHtml(a.compareLabel)+'（'+escapeHtml(a.prevD)+'）'+fY(a.prev)+' → 対象日 '+fY(a.today)+' / 予算 '+fY(a.budgetTotal)+' / 予算差 '+escapeHtml(budgetGapStr)+' / 前年同週 '+fY(a.lyTotal)+'</div>'+grossLine(a.profitTotal,a.grossRateTotal,a.profitYoy)+judgment+weatherBlock+bumonBreakdown+(a.tempNote?'<div class="action" style="font-size:12px;margin-top:6px">🌡️ '+escapeHtml(a.tempNote)+'</div>':''):subcatMetrics+subcatTempBlock+subcatZoneBlock)+
       '</article>';
   }).join('');
 }
