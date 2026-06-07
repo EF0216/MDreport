@@ -155,11 +155,12 @@ assert.match(html, /予算差 \+40,000円/);
 assert.match(html, /予算差 -40,000円/);
 assert.match(html, /予算比上位/);
 assert.match(html, /予算比下位/);
+assert.match(html, /sales-weather-compact/);
 assert.match(html, /気温/);
-assert.match(html, /最高/);
-assert.match(html, /23\.4℃/);
+assert.match(html, /23\.4\/17\.8℃/);
 assert.match(html, /湿度/);
 assert.match(html, /73\.0%/);
+assert.doesNotMatch(html, /降水前週差/);
 
 const firstHigh = html.indexOf('高予算A');
 const firstLow = html.indexOf('低予算A');
