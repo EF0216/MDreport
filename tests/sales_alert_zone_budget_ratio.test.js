@@ -128,6 +128,8 @@ context.window.__dashboardTest.renderDashboard({
 const html = elements.salesAlerts.innerHTML;
 
 assert.strictEqual(elements.salesAlertSection.hidden, false);
+assert.match(html, /全社計/);
+assert.match(html, /全国/);
 assert.match(html, /高予算A/);
 assert.match(html, /高予算B/);
 assert.match(html, /高予算C/);
@@ -143,6 +145,8 @@ assert.match(html, /予算比下位/);
 
 const firstHigh = html.indexOf('高予算A');
 const firstLow = html.indexOf('低予算A');
+const national = html.indexOf('全社計');
+assert(national !== -1 && national < firstHigh, 'national total should render before budget-ratio zone winners');
 assert(firstHigh !== -1 && firstLow !== -1 && firstHigh < firstLow, 'budget-ratio winners should render before losers');
 
 console.log('sales alert zone budget ratio ok');

@@ -1598,7 +1598,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
   // ── ゾーンアラート ──
   var allZoneChanges=Object.keys(zTodayD).filter(function(z){
     var td=zTodayD[z]||{};
-    return z!=='全社計'&&(td.totalBudget||0)>0&&(td.total||0)>0;
+    return (td.totalBudget||0)>0&&(td.total||0)>0;
   }).map(function(z){
     var td=zTodayD[z]||{};var pd=zPrevD[z]||{};
     var pct=zPrev[z]?(zToday[z]-zPrev[z])/zPrev[z]*100:null;
@@ -1629,10 +1629,13 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     selectedBudgetZones[z.zone]=true;
     zoneUpDown.push(Object.assign({},z,{budgetRankType:rankType}));
   };
-  allZoneChanges.slice().sort(function(a,b){return b.budgetRatio-a.budgetRatio;}).slice(0,3).forEach(function(z){addBudgetZone(z,'予算比上位');});
-  allZoneChanges.slice().sort(function(a,b){return a.budgetRatio-b.budgetRatio;}).slice(0,3).forEach(function(z){addBudgetZone(z,'予算比下位');});
+  var nationalChange=allZoneChanges.find(function(z){return z.zone==='全社計';});
+  var budgetZoneChanges=allZoneChanges.filter(function(z){return z.zone!=='全社計';});
+  addBudgetZone(nationalChange,'全国');
+  budgetZoneChanges.slice().sort(function(a,b){return b.budgetRatio-a.budgetRatio;}).slice(0,3).forEach(function(z){addBudgetZone(z,'予算比上位');});
+  budgetZoneChanges.slice().sort(function(a,b){return a.budgetRatio-b.budgetRatio;}).slice(0,3).forEach(function(z){addBudgetZone(z,'予算比下位');});
   zoneUpDown.forEach(function(z){
-    var isUp=z.budgetRankType==='予算比上位';var tempNote='';
+    var isUp=Number(z.budgetRatio)>=100;var tempNote='';
     if(Math.abs(z.tempDiff)>=2){
       var tl='平均気温'+z.tempCompareLabel;
       if(isUp&&z.tempDiff>=2)tempNote=tl+'+'+z.tempDiff.toFixed(1)+'℃ → 気温寄与の可能性';
