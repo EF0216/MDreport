@@ -1042,6 +1042,12 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
         rain_mm:0,
         temp_vs_yesterday:'',
         avg_temp_values:[],
+        max_temp_values:[],
+        min_temp_values:[],
+        rain_values:[],
+        humidity_values:[],
+        last_year_humidity_values:[],
+        humidity_vs_ly_values:[],
         temp_vs_last_week_values:[],
         temp_vs_last_year_values:[],
         last_year_avg_values:[],
@@ -1063,9 +1069,15 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
     var lyMin=numberOrNaN(row.last_year_min_temp);
     var lyAvg=rowLastYearAvgTemp(row);
     var lyRain=numberOrNaN(row.last_year_rain_mm);
-    if(!Number.isNaN(maxTemp))item.max_temp=item.max_temp===null?maxTemp:Math.max(item.max_temp,maxTemp);
-    if(!Number.isNaN(minTemp))item.min_temp=item.min_temp===null?minTemp:Math.min(item.min_temp,minTemp);
-    if(!Number.isNaN(rain))item.rain_mm+=rain;
+    var humidity=numberOrNaN(row.humidity_avg);
+    var lyHumidity=numberOrNaN(row.last_year_humidity_avg);
+    var humidityYearDiff=numberOrNaN(row.humidity_vs_last_year_same_weekday);
+    if(!Number.isNaN(maxTemp)){item.max_temp=item.max_temp===null?maxTemp:Math.max(item.max_temp,maxTemp);item.max_temp_values.push(maxTemp);}
+    if(!Number.isNaN(minTemp)){item.min_temp=item.min_temp===null?minTemp:Math.min(item.min_temp,minTemp);item.min_temp_values.push(minTemp);}
+    if(!Number.isNaN(rain)){item.rain_mm+=rain;item.rain_values.push(rain);}
+    if(!Number.isNaN(humidity))item.humidity_values.push(humidity);
+    if(!Number.isNaN(lyHumidity))item.last_year_humidity_values.push(lyHumidity);
+    if(!Number.isNaN(humidityYearDiff))item.humidity_vs_ly_values.push(humidityYearDiff);
     if(!Number.isNaN(lyRain))item.last_year_rain_values.push(lyRain);
     if(!Number.isNaN(avgTemp))item.avg_temp_values.push(avgTemp);
     if(!Number.isNaN(weekDiff))item.temp_vs_last_week_values.push(weekDiff);
@@ -1089,6 +1101,14 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
     var rainVsLastYear=lastYearRain===''?'':Math.round((thisYearRain-lastYearRain)*10)/10;
     var compareRain=compareRainByZone[item.zone];
     var rainVsLastWeek=(typeof compareRain!=='undefined'&&compareRain!=='')?Math.round((thisYearRain-compareRain)*10)/10:'';
+    // 週別の気温タブ用：最高/最低/降水/湿度の「週内平均」も持たせる（合計・極値は他タブ用に従来通り温存）。
+    var avgMaxTemp=average(item.max_temp_values);
+    var avgMinTemp=average(item.min_temp_values);
+    var avgRain=average(item.rain_values);
+    var avgHumidity=average(item.humidity_values);
+    var avgLastYearRain=average(item.last_year_rain_values);
+    var avgRainVsLastYear=(avgRain!==''&&avgLastYearRain!=='')?Math.round((avgRain-avgLastYearRain)*10)/10:'';
+    var avgHumidityYearDiff=average(item.humidity_vs_ly_values);
     return {
       date:item.date,
       display_date:item.display_date,
@@ -1097,6 +1117,14 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
       avg_temp:avgTemp,
       max_temp:item.max_temp===null?'':item.max_temp,
       min_temp:item.min_temp===null?'':item.min_temp,
+      avg_max_temp:avgMaxTemp,
+      avg_min_temp:avgMinTemp,
+      avg_rain_mm:avgRain,
+      avg_last_year_rain_mm:avgLastYearRain,
+      avg_rain_vs_last_year_same_weekday:avgRainVsLastYear,
+      humidity_avg:avgHumidity,
+      last_year_humidity_avg:average(item.last_year_humidity_values),
+      humidity_vs_last_year_same_weekday:avgHumidityYearDiff,
       rain_mm:thisYearRain,
       rain_vs_last_week:rainVsLastWeek,
       temp_vs_yesterday:'',
@@ -1123,6 +1151,11 @@ function buildNationalAvgWeather(items) {
     max_temp:roundAvg('max_temp'),
     min_temp:roundAvg('min_temp'),
     rain_mm:roundAvg('rain_mm'),
+    avg_max_temp:roundAvg('avg_max_temp'),
+    avg_min_temp:roundAvg('avg_min_temp'),
+    avg_rain_mm:roundAvg('avg_rain_mm'),
+    avg_last_year_rain_mm:roundAvg('avg_last_year_rain_mm'),
+    avg_rain_vs_last_year_same_weekday:roundAvg('avg_rain_vs_last_year_same_weekday'),
     temp_vs_last_week:roundAvg('temp_vs_last_week'),
     temp_vs_yesterday:roundAvg('temp_vs_yesterday'),
     temp_vs_last_year_same_weekday:roundAvg('temp_vs_last_year_same_weekday'),
@@ -1219,12 +1252,30 @@ function renderWeather(items, trendItems, zoneOrder) {
   var fmtMm=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':n.toFixed(1)+'mm';};
   var fmtMmDiff=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'-':((n>0?'+':'')+n.toFixed(1)+'mm');};
   var rainDiffClass=function(v){var n=numberOrNaN(v);return Number.isNaN(n)?'':(n>0?'num-bad':n<0?'num-good':'');};
+  // 週別モードのときだけ、気温タブは最高/最低/降水/湿度を「週内平均」で表示する（日別は従来どおり）。
+  var weekly = state.dateMode === 'weekly';
+  var hasVal=function(v){return v!==''&&v!==null&&typeof v!=='undefined'&&!Number.isNaN(Number(v));};
+  var pickWeekly=function(item, avgKey, baseKey){var v=item[avgKey];return (weekly&&hasVal(v))?v:item[baseKey];};
+  var fmtDeg=function(v){return hasVal(v)?escapeHtml(v)+'℃':'-';};
+  var maxLabel = weekly ? '平均最高' : '最高';
+  var minLabel = weekly ? '平均最低' : '最低';
+  var rainLabel = weekly ? '平均降水量' : '降水量';
   renderCards('weatherCards', allItems, function(item) {
-    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.display_date||item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(item.max_temp,item.last_year_max_temp) + '">最高' + escapeHtml(item.max_temp) + '℃</span></div><div><span class="' + tempCompareClass(item.min_temp,item.last_year_min_temp) + '">最低' + escapeHtml(item.min_temp) + '℃</span> / 降水量' + escapeHtml(item.rain_mm) + 'mm（昨年 ' + fmtMm(item.last_year_rain_mm) + ' / 前年差 <span class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</span>） / 湿度' + formatHumidity(item.humidity_avg) + '</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 湿度前年差 <span class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
+    var maxV=pickWeekly(item,'avg_max_temp','max_temp');
+    var minV=pickWeekly(item,'avg_min_temp','min_temp');
+    var rainV=weekly?item.avg_rain_mm:item.rain_mm;
+    var lyRainV=weekly?item.avg_last_year_rain_mm:item.last_year_rain_mm;
+    var rainDiffV=weekly?item.avg_rain_vs_last_year_same_weekday:item.rain_vs_last_year_same_weekday;
+    return '<article class="card"><div class="meta"><span>' + escapeHtml(item.display_date||item.date) + '</span><span>' + escapeHtml(item.zone) + '</span></div><div class="card-title">' + escapeHtml(item.area_name) + '：<span class="' + tempCompareClass(maxV,item.last_year_max_temp) + '">' + maxLabel + fmtDeg(maxV) + '</span></div><div><span class="' + tempCompareClass(minV,item.last_year_min_temp) + '">' + minLabel + fmtDeg(minV) + '</span> / ' + rainLabel + (hasVal(rainV)?escapeHtml(rainV)+'mm':'-') + '（昨年 ' + fmtMm(lyRainV) + ' / 前年差 <span class="' + rainDiffClass(rainDiffV) + '">' + fmtMmDiff(rainDiffV) + '</span>） / 湿度' + formatHumidity(item.humidity_avg) + '</div><div>前週差 <span class="' + tempDiffClass(item.temp_vs_last_week) + '">' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</span> / 前日差 <span class="' + tempDiffClass(item.temp_vs_yesterday) + '">' + formatTempDiffOrDash(item.temp_vs_yesterday) + '℃</span> / 前年差 <span class="' + tempDiffClass(item.temp_vs_last_year_same_weekday) + '">' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</span> / 湿度前年差 <span class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</span> / 昨年 ' + escapeHtml(item.last_year_same_weekday_date||'-') + '</div><div class="action">' + escapeHtml(item.weather_alert) + '</div></article>';
   });
   var tbody = document.getElementById('weatherTable');
   tbody.innerHTML = allItems.map(function(item) {
-    return '<tr><td>' + escapeHtml(item.display_date||item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + escapeHtml(item.max_temp) + '℃</td><td>' + escapeHtml(item.min_temp) + '℃</td><td>' + escapeHtml(item.rain_mm) + 'mm</td><td>' + fmtMm(item.last_year_rain_mm) + '</td><td class="' + rainDiffClass(item.rain_vs_last_year_same_weekday) + '">' + fmtMmDiff(item.rain_vs_last_year_same_weekday) + '</td><td>' + formatHumidity(item.humidity_avg) + '</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
+    var maxV=pickWeekly(item,'avg_max_temp','max_temp');
+    var minV=pickWeekly(item,'avg_min_temp','min_temp');
+    var rainV=weekly?item.avg_rain_mm:item.rain_mm;
+    var lyRainV=weekly?item.avg_last_year_rain_mm:item.last_year_rain_mm;
+    var rainDiffV=weekly?item.avg_rain_vs_last_year_same_weekday:item.rain_vs_last_year_same_weekday;
+    return '<tr><td>' + escapeHtml(item.display_date||item.date) + '</td><td>' + escapeHtml(item.zone) + '</td><td>' + fmtDeg(maxV) + '</td><td>' + fmtDeg(minV) + '</td><td>' + (hasVal(rainV)?escapeHtml(rainV)+'mm':'-') + '</td><td>' + fmtMm(lyRainV) + '</td><td class="' + rainDiffClass(rainDiffV) + '">' + fmtMmDiff(rainDiffV) + '</td><td>' + formatHumidity(item.humidity_avg) + '</td><td>' + formatTempDiffOrDash(item.temp_vs_last_week) + '℃</td><td>' + formatTempDiffOrDash(item.temp_vs_last_year_same_weekday) + '℃</td><td class="' + humidityDiffClass(item.humidity_vs_last_year_same_weekday) + '">' + formatSignedHumidityDiff(item.humidity_vs_last_year_same_weekday) + '</td><td>' + escapeHtml(item.last_year_same_weekday_date||'-') + '</td><td>' + escapeHtml(item.weather_alert) + '</td></tr>';
   }).join('');
   renderWeatherTrend(trendItems||[], allItems, zoneOrder||[]);
 }
