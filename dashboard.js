@@ -1102,6 +1102,7 @@ function aggregateWeatherPeriod(rows,startDate,endDate,dateKey,displayDate,compa
       temp_vs_yesterday:'',
       temp_vs_last_week:lastWeekDiff,
       temp_vs_last_year_same_weekday:lastYearDiff,
+      last_year_avg_temp:lastYearAvg,
       last_year_max_temp:item.last_year_max_temp===null?'':item.last_year_max_temp,
       last_year_min_temp:item.last_year_min_temp===null?'':item.last_year_min_temp,
       last_year_rain_mm:lastYearRain,
@@ -1140,9 +1141,12 @@ function buildNationalAvgWeather(items) {
 
 function renderWeatherKpiColumn(w) {
   if (!w) return '';
+  var avgTemp = numberOrNaN(w.avg_temp);
   var maxTemp = numberOrNaN(w.max_temp);
-  if (Number.isNaN(maxTemp)) return '';
-  var minTemp = numberOrNaN(w.min_temp);
+  var primaryTemp = Number.isNaN(avgTemp) ? maxTemp : avgTemp;
+  if (Number.isNaN(primaryTemp)) return '';
+  var lastYearAvgTemp = numberOrNaN(w.last_year_avg_temp);
+  var primaryLastYearTemp = Number.isNaN(lastYearAvgTemp) ? numberOrNaN(w.last_year_max_temp) : lastYearAvgTemp;
   var hasLW = w.temp_vs_last_week !== '' && w.temp_vs_last_week !== null && typeof w.temp_vs_last_week !== 'undefined';
   var tempDiff = numberOrNaN(hasLW ? w.temp_vs_last_week : w.temp_vs_yesterday);
   var yearTempDiff = numberOrNaN(w.temp_vs_last_year_same_weekday);
@@ -1156,31 +1160,33 @@ function renderWeatherKpiColumn(w) {
   var formatSignedWeatherValue = function(value, unit) {
     var n = numberOrNaN(value);
     if (Number.isNaN(n)) return '-';
-    var sign = n === 0 ? '±' : n > 0 ? '+' : '';
+    var sign = n === 0 ? '\u00b1' : n > 0 ? '+' : '';
     return sign + n.toFixed(1) + unit;
   };
   var signedWeatherDiffClass = function(value) {
     var n = numberOrNaN(value);
     return Number.isNaN(n) || n === 0 ? '' : n > 0 ? 'num-bad' : 'num-good';
   };
-  return '<div class="zs-col"><div class="zs-col-head">気温</div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l '+tempCompareClass(w.max_temp,w.last_year_max_temp)+'">最高</span><span class="zs-kpi-v">'+formatWeatherValue(maxTemp,'℃')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l '+tempCompareClass(w.min_temp,w.last_year_min_temp)+'">最低</span><span class="zs-kpi-v">'+formatWeatherValue(minTemp,'℃')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'前週差':'前日差')+'</span><span class="zs-kpi-v '+tempDiffClass(tempDiff)+'">'+formatSignedWeatherValue(tempDiff,'℃')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">前年差</span><span class="zs-kpi-v '+tempDiffClass(yearTempDiff)+'">'+formatSignedWeatherValue(yearTempDiff,'℃')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">降水量</span><span class="zs-kpi-v">'+formatWeatherValue(w.rain_mm,'mm')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">降水前週差</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainWeekDiff)+'">'+formatSignedWeatherValue(rainWeekDiff,'mm')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">降水前年差</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainYearDiff)+'">'+formatSignedWeatherValue(rainYearDiff,'mm')+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">湿度</span><span class="zs-kpi-v">'+formatHumidity(w.humidity_avg)+'</span></div>'+
-    '<div class="zs-kpi"><span class="zs-kpi-l">湿度前年差</span><span class="zs-kpi-v '+humidityDiffClass(humidityYearDiff)+'">'+formatSignedHumidityDiff(humidityYearDiff)+'</span></div>'+
+  return '<div class="zs-col"><div class="zs-col-head">\u6c17\u6e29</div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l '+tempCompareClass(primaryTemp, primaryLastYearTemp)+'">\u5e73\u5747</span><span class="zs-kpi-v">'+formatWeatherValue(primaryTemp, '\u2103')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">'+(hasLW?'\u524d\u9031\u5dee':'\u524d\u65e5\u5dee')+'</span><span class="zs-kpi-v '+tempDiffClass(tempDiff)+'">'+formatSignedWeatherValue(tempDiff, '\u2103')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u524d\u5e74\u5dee</span><span class="zs-kpi-v '+tempDiffClass(yearTempDiff)+'">'+formatSignedWeatherValue(yearTempDiff, '\u2103')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u964d\u6c34\u91cf</span><span class="zs-kpi-v">'+formatWeatherValue(w.rain_mm, 'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u964d\u6c34\u524d\u9031\u5dee</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainWeekDiff)+'">'+formatSignedWeatherValue(rainWeekDiff, 'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u964d\u6c34\u524d\u5e74\u5dee</span><span class="zs-kpi-v '+signedWeatherDiffClass(rainYearDiff)+'">'+formatSignedWeatherValue(rainYearDiff, 'mm')+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u6e7f\u5ea6</span><span class="zs-kpi-v">'+formatHumidity(w.humidity_avg)+'</span></div>'+
+    '<div class="zs-kpi"><span class="zs-kpi-l">\u6e7f\u5ea6\u524d\u5e74\u5dee</span><span class="zs-kpi-v '+signedWeatherDiffClass(humidityYearDiff)+'">'+formatSignedHumidityDiff(humidityYearDiff)+'</span></div>'+
     '</div>';
 }
 
 function renderSalesAlertWeatherCompact(w) {
   if (!w) return '';
+  var avgTemp = numberOrNaN(w.avg_temp);
   var maxTemp = numberOrNaN(w.max_temp);
-  if (Number.isNaN(maxTemp)) return '';
-  var minTemp = numberOrNaN(w.min_temp);
+  var primaryTemp = Number.isNaN(avgTemp) ? maxTemp : avgTemp;
+  if (Number.isNaN(primaryTemp)) return '';
+  var lastYearAvgTemp = numberOrNaN(w.last_year_avg_temp);
+  var primaryLastYearTemp = Number.isNaN(lastYearAvgTemp) ? numberOrNaN(w.last_year_max_temp) : lastYearAvgTemp;
   var hasLW = w.temp_vs_last_week !== '' && w.temp_vs_last_week !== null && typeof w.temp_vs_last_week !== 'undefined';
   var tempDiff = numberOrNaN(hasLW ? w.temp_vs_last_week : w.temp_vs_yesterday);
   var yearTempDiff = numberOrNaN(w.temp_vs_last_year_same_weekday);
@@ -1191,19 +1197,18 @@ function renderSalesAlertWeatherCompact(w) {
   var formatSignedWeatherValue = function(value, unit) {
     var n = numberOrNaN(value);
     if (Number.isNaN(n)) return '-';
-    var sign = n === 0 ? '±' : n > 0 ? '+' : '';
+    var sign = n === 0 ? '\u00b1' : n > 0 ? '+' : '';
     return sign + n.toFixed(1) + unit;
   };
-  var tempPair = Number.isNaN(minTemp) ? formatWeatherValue(maxTemp, '℃') : maxTemp.toFixed(1) + '/' + minTemp.toFixed(1) + '℃';
   var chip = function(label, value, cls) {
     return '<span class="sales-weather-chip"><span>' + escapeHtml(label) + '</span><strong class="' + (cls || '') + '">' + escapeHtml(value) + '</strong></span>';
   };
   return '<div class="sales-weather-compact">' +
-    chip('気温', tempPair, tempCompareClass(w.max_temp, w.last_year_max_temp)) +
-    chip(hasLW ? '前週' : '前日', formatSignedWeatherValue(tempDiff, '℃'), tempDiffClass(tempDiff)) +
-    chip('前年', formatSignedWeatherValue(yearTempDiff, '℃'), tempDiffClass(yearTempDiff)) +
-    chip('雨', formatWeatherValue(w.rain_mm, 'mm'), '') +
-    chip('湿度', formatHumidity(w.humidity_avg), '') +
+    chip('\u6c17\u6e29', formatWeatherValue(primaryTemp, '\u2103'), tempCompareClass(primaryTemp, primaryLastYearTemp)) +
+    chip(hasLW ? '\u524d\u9031' : '\u524d\u65e5', formatSignedWeatherValue(tempDiff, '\u2103'), tempDiffClass(tempDiff)) +
+    chip('\u524d\u5e74', formatSignedWeatherValue(yearTempDiff, '\u2103'), tempDiffClass(yearTempDiff)) +
+    chip('\u96e8', formatWeatherValue(w.rain_mm, 'mm'), '') +
+    chip('\u6e7f\u5ea6', formatHumidity(w.humidity_avg), '') +
     '</div>';
 }
 

@@ -34,6 +34,8 @@ vm.runInContext(
 window.__dashboardTest = {
   state,
   renderDashboard,
+  renderWeatherKpiColumn,
+  renderSalesAlertWeatherCompact,
   setRenderSales(fn) { renderSales = fn; },
   setNoop(name, fn) { this[name] = fn; }
 };`,
@@ -122,3 +124,40 @@ assert.strictEqual(hokkaido.temp_vs_last_week, 3.1);
 assert.strictEqual(hokkaido.rain_mm, 3);
 assert.strictEqual(hokkaido.last_year_rain_mm, 2);
 assert.strictEqual(hokkaido.rain_vs_last_year_same_weekday, 1);
+
+const weeklyWeather = {
+  avg_temp: 22.2,
+  max_temp: 30,
+  min_temp: 10,
+  last_year_avg_temp: 21.1,
+  last_year_max_temp: 28,
+  last_year_min_temp: 8,
+  temp_vs_last_week: -1.2,
+  temp_vs_last_year_same_weekday: 1.1,
+  rain_mm: 3,
+  rain_vs_last_week: -0.5,
+  rain_vs_last_year_same_weekday: 1,
+  humidity_avg: 72,
+  humidity_vs_last_year_same_weekday: -2
+};
+const weeklyKpiHtml = context.window.__dashboardTest.renderWeatherKpiColumn(weeklyWeather);
+assert(
+  weeklyKpiHtml.includes('22.2'),
+  'weekly sales weather KPI should display average temperature when avg_temp is available'
+);
+assert(
+  !weeklyKpiHtml.includes('30.0'),
+  'weekly sales weather KPI should not use the one-day high as the primary temperature'
+);
+
+const weeklyCompactHtml = context.window.__dashboardTest.renderSalesAlertWeatherCompact(weeklyWeather);
+assert(
+  weeklyCompactHtml.includes('22.2'),
+  'compact weekly alert weather should display average temperature when avg_temp is available'
+);
+assert(
+  !weeklyCompactHtml.includes('30.0/10.0'),
+  'compact weekly alert weather should not display the max/min pair as the primary temperature'
+);
+
+console.log('sales weather weekly ok');
