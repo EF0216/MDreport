@@ -78,6 +78,9 @@ assert.strictEqual(cards[0].value, '581万');
 assert.match(cards[0].chip.label, /%$/, 'sales delta chip should show percent units');
 assert.match(cards[1].chip.label, /pt$/, 'budget ratio delta chip should show point units');
 assert.match(cards[2].chip.label, /pt$/, 'year ratio delta chip should show point units');
+assert.strictEqual(cards[2].label, '前年同週同曜日比');
+assert.strictEqual(cards[2].foot, '対比元: 前年同週同曜日実績');
+assert.strictEqual(cards[2].compareLabel, 'pt差: 前週同曜日 5/29');
 assert.match(cards[3].chip.label, /pt$/, 'gross margin delta chip should show point units');
 assert.strictEqual(cards[0].compareLabel, '比較: 前週同曜日 5/29');
 assert.strictEqual(cards[1].compareLabel, '比較: 前週同曜日 5/29');
@@ -114,6 +117,7 @@ const weeklyCards = api.buildOverviewTrendCards({
   ]
 });
 assert.strictEqual(weeklyCards[0].compareLabel, '比較: 前週累計 5/25～5/31');
+assert.strictEqual(weeklyCards[2].compareLabel, 'pt差: 前週累計 5/25～5/31');
 assert.match(weeklyCards[0].chip.label, /%$/, 'weekly sales delta chip should also show percent units');
 assert.match(weeklyCards[1].chip.label, /pt$/, 'weekly budget ratio delta chip should also show point units');
 

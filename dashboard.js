@@ -797,11 +797,12 @@ function buildOverviewTrendCards(data) {
   const salesDelta = trendChip(metricDelta(current, compare, 'actual', true), null, '%');
   const budgetDelta = trendChip(metricDelta(current, compare, 'budgetRatio', false), null, 'pt');
   const yearDelta = trendChip(metricDelta(current, compare, 'yearRatio', false), null, 'pt');
+  const yearCompareLabel = compareLabel ? compareLabel.replace(/^比較: /, 'pt差: ') : '';
   const grossDelta = trendChip(metricDelta(current, compare, 'grossRate', false), null, 'pt');
   return [
     { label: 'レッグウェア売上(' + (state.dateMode === 'weekly' ? '当週' : '最新') + ')', value: formatCompactYen(current.actual), unit: '', chip: salesDelta, foot: salesOverviewFoot(data, current), compareLabel, tone: 'down', series: series.map((item) => item.actual), scale: { type: 'yen' }, dates: salesDates },
     { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', compareLabel, tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
-    { label: '前年同週比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '前年同週同曜日', compareLabel, tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
+    { label: '前年同週同曜日比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '対比元: 前年同週同曜日実績', compareLabel: yearCompareLabel, tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
     { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), compareLabel, tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
     { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, temperatureForecastChipLabel(temperature)), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
   ];
