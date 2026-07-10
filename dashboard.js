@@ -37,6 +37,25 @@ function pickComparisonDate(dates, date) {
 // ── 状態 ─────────────────────────────────────────────────────
 const state = { loading: false, data: null, dateMode: 'daily', weekKey: '', weekWindows: [] };
 
+function inflateCompactRows(value) {
+  if (!value || value.__compactRows !== true || !Array.isArray(value.columns) || !Array.isArray(value.rows)) return value;
+  return value.rows.map(function(row) {
+    var obj = {};
+    value.columns.forEach(function(column, index) {
+      obj[column] = Array.isArray(row) && typeof row[index] !== 'undefined' ? row[index] : '';
+    });
+    return obj;
+  });
+}
+
+function inflateDashboardData(data) {
+  if (!data || data.__compact !== 'columns_rows_v1') return data;
+  Object.keys(data).forEach(function(key) {
+    data[key] = inflateCompactRows(data[key]);
+  });
+  return data;
+}
+
 // ── グローバル週ウィンドウ ────────────────────────────────────
 function _gwToMonday(ds){var d=new Date(ds+'T00:00:00');var day=d.getDay();var diff=day===0?-6:1-day;d.setDate(d.getDate()+diff);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function _gwAddDays(ds,n){var d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -135,7 +154,7 @@ async function loadDashboard() {
     // 毎回 URL を変えて取得する。GitHub Pages 側の更新を即時に反映するため。
     const res = await fetch('./data/dashboard_data.json?t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error(`データ取得失敗 (${res.status})`);
-    const data = await res.json();
+    const data = inflateDashboardData(await res.json());
     state.data = data;
     renderDashboard(data);
     setLoading(false);
