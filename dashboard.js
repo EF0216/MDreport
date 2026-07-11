@@ -94,9 +94,10 @@ function aggregateBumonPeriod(rows,startDate,endDate,dateKey){
   var map={};
   rows.filter(function(r){return r.date>=startDate&&r.date<=endDate;}).forEach(function(r){
     var key=[String(r.zone_code||''),r.zone_name||'',String(r['部門CD']||''),r['部門名']||''].join('|');
-    if(!map[key])map[key]=Object.assign({},r,{date:dateKey,'売上実績':0,'前年同週同曜日実績':0,'売上予算':0,'販売荒利高':0,'前年荒利高':0,'達成率':null,'前年比':null,'荒利率':null,_hasLy:false,_hasProfit:false,_hasLyProfit:false});
+    if(!map[key])map[key]=Object.assign({},r,{date:dateKey,'売上実績':0,'前年同週同曜日実績':0,'売上予算':0,'販売荒利高':0,'前年荒利高':0,'荒利予算':0,'達成率':null,'前年比':null,'荒利率':null,'荒利予算比':null,_hasLy:false,_hasProfit:false,_hasLyProfit:false});
     map[key]['売上実績']+=Number(r['売上実績']||0);
     map[key]['売上予算']+=Number(r['売上予算']||0);
+    map[key]['荒利予算']+=Number(r['荒利予算']||0);
     if(r['前年同週同曜日実績']!==''&&r['前年同週同曜日実績']!==null){map[key]['前年同週同曜日実績']+=Number(r['前年同週同曜日実績']||0);map[key]._hasLy=true;}
     var p=grossProfitFromRow(r,'売上実績');if(!Number.isNaN(p)){map[key]['販売荒利高']+=p;map[key]._hasProfit=true;}
     var lp=lastYearGrossProfitFromRow(r);if(!Number.isNaN(lp)){map[key]['前年荒利高']+=lp;map[key]._hasLyProfit=true;}
