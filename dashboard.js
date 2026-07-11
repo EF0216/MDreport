@@ -1,8 +1,9 @@
 // ── ゾーン順序 ───────────────────────────────────────────────
 const ZONE_ORDER_NS = [
-  '北海道','青森','東北','首都圏','西関東','東関東',
-  '東関西','西関西','中部','北陸','中国','四国',
-  '北九州','筑豊','福岡','東九州','西九州','天草','南九州','西友'
+  '北海道','青森','東北','北関東','首都圏','西関東','東関東',
+  '京葉','STリテール','西友','中京','中部','北陸','関西',
+  '東関西','西関西','中国','四国','福岡','北九州','筑豊',
+  '西九州','東九州','天草','南九州'
 ];
 
 function sortZonesNS(zoneNames) {
@@ -983,6 +984,7 @@ function renderStoreSalesHighlight(dailyRows, subcatRows, dates) {
       '<span class="' + rCls(r['前週同曜日比']) + '">前週同曜日比 ' + fR(r['前週同曜日比']) + '</span> ' +
       '<span class="' + rCls(r['昨年比']) + '">前年 ' + fR(r['昨年比']) + '</span> ' +
       '<span class="' + rCls(r['予算比']) + '">予算 ' + fR(r['予算比']) + '</span> ' +
+      '<span class="' + rCls(r['荒利予算比']) + '">荒利予算 ' + fR(r['荒利予算比']) + '</span> ' +
       '<span class="sales-alert-amount">' + fY(r['前週同曜日実績']) + ' → ' + fY(r['売上実績']) + '</span>' +
       '</span></div>' +
       '<div class="sales-alert-main">' + fmtMain(d && d.main) + '</div>' +
@@ -996,7 +998,8 @@ function renderStoreSalesHighlight(dailyRows, subcatRows, dates) {
     const title = escapeHtml(s.name || '') + '：' +
       '<span class="' + rCls(t['前週同曜日比']) + '">前週同曜日比 ' + fR(t['前週同曜日比']) + '</span> ' +
       '<span class="' + rCls(t['昨年比']) + '">前年比 ' + fR(t['昨年比']) + '</span> ' +
-      '<span class="' + rCls(t['予算比']) + '">予算比 ' + fR(t['予算比']) + '</span>';
+      '<span class="' + rCls(t['予算比']) + '">予算比 ' + fR(t['予算比']) + '</span> ' +
+      '<span class="' + rCls(t['荒利予算比']) + '">荒利予算比 ' + fR(t['荒利予算比']) + '</span>';
     const desc = '<div style="font-size:13px;color:var(--muted)">合計　前週同曜日（' + escapeHtml(prevD) + '）' + fY(t['前週同曜日実績']) +
       ' → 対象日 ' + fY(t['売上実績']) + ' / 予算 ' + fY(t['予算']) + ' / 前年同週 ' + fY(t['昨年実績']) + '</div>';
     const breakdown = '<div class="sales-alert-breakdown">' +
@@ -1444,10 +1447,13 @@ function renderSales(allRows, dates, weatherItems) {
       var profit=grossProfitFromRow(row,'売上実績');
       var grossRate=!Number.isNaN(normalizePercentValue(row['荒利率']))?normalizePercentValue(row['荒利率']):grossMarginRate(profit,actual);
       var lyProfit=lastYearGrossProfitFromRow(row);
+      var gpBudget=numberOrNaN(row['荒利予算']);
+      var gpBudgetRatio=numberOrNaN(row['荒利予算比']);
+      if(Number.isNaN(gpBudgetRatio)&&!Number.isNaN(profit)&&!Number.isNaN(gpBudget)&&gpBudget)gpBudgetRatio=Math.round(profit/gpBudget*1000)/10;
       var ly=numberOrNaN(row['前年同週同曜日実績']);
       var yoy=numberOrNaN(row['前年比']);
       if(Number.isNaN(yoy)&&!Number.isNaN(actual)&&!Number.isNaN(ly)&&ly)yoy=Math.round(actual/ly*1000)/10;
-      return{budget:budget,actual:actual,ratio:ratio,ly:ly,yoy:yoy,profit:profit,grossRate:grossRate,lyProfit:lyProfit,profitYoy:yoyRateValue(profit,lyProfit)};
+      return{budget:budget,actual:actual,ratio:ratio,ly:ly,yoy:yoy,profit:profit,grossRate:grossRate,lyProfit:lyProfit,profitYoy:yoyRateValue(profit,lyProfit),gpBudget:gpBudget,gpBudgetRatio:gpBudgetRatio};
     };
     var pctClass=function(v){return(v===null||Number.isNaN(Number(v)))?'':Number(v)>=100?'num-good':Number(v)>=95?'num-warn':'num-bad';};
     var colHtml=function(label,col){
@@ -1459,6 +1465,7 @@ function renderSales(allRows, dates, weatherItems) {
         '<div class="zs-kpi"><span class="zs-kpi-l">前年比</span><span class="zs-kpi-v '+pctClass(col.yoy)+'">'+(Number.isNaN(col.yoy)?'-':col.yoy.toFixed(1)+'%')+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">荒利</span><span class="zs-kpi-v">'+(Number.isNaN(col.profit)?'-':Math.round(col.profit).toLocaleString('ja-JP'))+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">粗利率</span><span class="zs-kpi-v">'+(Number.isNaN(col.grossRate)?'-':col.grossRate.toFixed(1)+'%')+'</span></div>'+
+        '<div class="zs-kpi"><span class="zs-kpi-l">荒利予算比</span><span class="zs-kpi-v '+pctClass(col.gpBudgetRatio)+'">'+(Number.isNaN(col.gpBudgetRatio)?'-':col.gpBudgetRatio.toFixed(1)+'%')+'</span></div>'+
         '<div class="zs-kpi"><span class="zs-kpi-l">荒利前年比</span><span class="zs-kpi-v '+pctClass(col.profitYoy)+'">'+(col.profitYoy===null||Number.isNaN(Number(col.profitYoy))?'-':Number(col.profitYoy).toFixed(1)+'%')+'</span></div>'+
         '</div>';
     };
@@ -1499,7 +1506,8 @@ function renderSales(allRows, dates, weatherItems) {
       var tL=(!Number.isNaN(mens.ly)?mens.ly:0)+(!Number.isNaN(ladies.ly)?ladies.ly:0);
       var tP=(!Number.isNaN(mens.profit)?mens.profit:0)+(!Number.isNaN(ladies.profit)?ladies.profit:0);
       var tLP=(!Number.isNaN(mens.lyProfit)?mens.lyProfit:0)+(!Number.isNaN(ladies.lyProfit)?ladies.lyProfit:0);
-      var total={budget:tB||NaN,actual:tA||NaN,ratio:tB?Math.round(tA/tB*1000)/10:NaN,ly:tL||NaN,yoy:tL?Math.round(tA/tL*1000)/10:NaN,profit:tP||NaN,grossRate:grossMarginRate(tP,tA),lyProfit:tLP||NaN,profitYoy:yoyRateValue(tP,tLP)};
+      var tGB=(!Number.isNaN(mens.gpBudget)?mens.gpBudget:0)+(!Number.isNaN(ladies.gpBudget)?ladies.gpBudget:0);
+      var total={budget:tB||NaN,actual:tA||NaN,ratio:tB?Math.round(tA/tB*1000)/10:NaN,ly:tL||NaN,yoy:tL?Math.round(tA/tL*1000)/10:NaN,profit:tP||NaN,grossRate:grossMarginRate(tP,tA),lyProfit:tLP||NaN,profitYoy:yoyRateValue(tP,tLP),gpBudget:tGB||NaN,gpBudgetRatio:tGB?Math.round(tP/tGB*1000)/10:NaN};
       var wData=z.isTotal?(weatherByZone['全国平均']||weatherByZone['全社計']||null):(weatherByZone[z.name]||null);
       return '<article class="card zs-card'+(z.isTotal?' zs-card-total':'')+'"><div class="zs-card-head">'+escapeHtml(z.name)+'</div><div class="zs-cols">'+colHtml('メンズ',mens)+colHtml('レディース',ladies)+colHtml('合計',total)+tempColHtml(wData)+'</div></article>';
     }).join('')+'</div>';
