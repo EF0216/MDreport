@@ -1682,14 +1682,15 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
       var ly=Number(r['前年同週同曜日実績']||0);
       var profit=grossProfitFromRow(r,'売上実績');
       var lyProfit=lastYearGrossProfitFromRow(r);
-      if(!m[z])m[z]={total:0,mens:0,ladies:0,totalBudget:0,mensBudget:0,ladiesBudget:0,totalLy:0,mensLy:0,ladiesLy:0,totalProfit:0,mensProfit:0,ladiesProfit:0,totalLyProfit:0,mensLyProfit:0,ladiesLyProfit:0};
-      m[z].total+=actual;m[z].totalBudget+=budget;m[z].totalLy+=ly;
+      var gpBudget=Number(r['荒利予算']||0);
+      if(!m[z])m[z]={total:0,mens:0,ladies:0,totalBudget:0,mensBudget:0,ladiesBudget:0,totalLy:0,mensLy:0,ladiesLy:0,totalProfit:0,mensProfit:0,ladiesProfit:0,totalLyProfit:0,mensLyProfit:0,ladiesLyProfit:0,totalGpBudget:0,mensGpBudget:0,ladiesGpBudget:0};
+      m[z].total+=actual;m[z].totalBudget+=budget;m[z].totalLy+=ly;m[z].totalGpBudget+=gpBudget;
       if(!Number.isNaN(profit))m[z].totalProfit+=profit;
       if(!Number.isNaN(lyProfit))m[z].totalLyProfit+=lyProfit;
-      if(bcd==='0075'){m[z].mens+=actual;m[z].mensBudget+=budget;m[z].mensLy+=ly;if(!Number.isNaN(profit))m[z].mensProfit+=profit;if(!Number.isNaN(lyProfit))m[z].mensLyProfit+=lyProfit;}
-      if(bcd==='0187'){m[z].ladies+=actual;m[z].ladiesBudget+=budget;m[z].ladiesLy+=ly;if(!Number.isNaN(profit))m[z].ladiesProfit+=profit;if(!Number.isNaN(lyProfit))m[z].ladiesLyProfit+=lyProfit;}
+      if(bcd==='0075'){m[z].mens+=actual;m[z].mensBudget+=budget;m[z].mensLy+=ly;m[z].mensGpBudget+=gpBudget;if(!Number.isNaN(profit))m[z].mensProfit+=profit;if(!Number.isNaN(lyProfit))m[z].mensLyProfit+=lyProfit;}
+      if(bcd==='0187'){m[z].ladies+=actual;m[z].ladiesBudget+=budget;m[z].ladiesLy+=ly;m[z].ladiesGpBudget+=gpBudget;if(!Number.isNaN(profit))m[z].ladiesProfit+=profit;if(!Number.isNaN(lyProfit))m[z].ladiesLyProfit+=lyProfit;}
     });
-    var national=Object.values(m).reduce(function(acc,row){Object.keys(acc).forEach(function(key){acc[key]+=Number(row[key]||0);});return acc;},{total:0,mens:0,ladies:0,totalBudget:0,mensBudget:0,ladiesBudget:0,totalLy:0,mensLy:0,ladiesLy:0,totalProfit:0,mensProfit:0,ladiesProfit:0,totalLyProfit:0,mensLyProfit:0,ladiesLyProfit:0});
+    var national=Object.values(m).reduce(function(acc,row){Object.keys(acc).forEach(function(key){acc[key]+=Number(row[key]||0);});return acc;},{total:0,mens:0,ladies:0,totalBudget:0,mensBudget:0,ladiesBudget:0,totalLy:0,mensLy:0,ladiesLy:0,totalProfit:0,mensProfit:0,ladiesProfit:0,totalLyProfit:0,mensLyProfit:0,ladiesLyProfit:0,totalGpBudget:0,mensGpBudget:0,ladiesGpBudget:0});
     if(national.total>0)m['全社計']=national;
     return m;
   };
@@ -1819,10 +1820,13 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
       budgetTotal:td.totalBudget||0,lyTotal:td.totalLy||0,profitTotal:td.totalProfit||0,lyProfitTotal:td.totalLyProfit||0,
       yoy:yoy,budgetRatio:budgetRatio,budgetGapTotal:(td.total||0)-(td.totalBudget||0),judgment:judgeTwoAxis(pct===null?0:pct,yoy),
       grossRateTotal:grossMarginRate(td.totalProfit||0,td.total||0),profitYoy:td.totalLyProfit?td.totalProfit/td.totalLyProfit*100:null,
+      gpBudgetRatioTotal:td.totalGpBudget?(td.totalProfit||0)/td.totalGpBudget*100:null,
       grossRateMens:grossMarginRate(td.mensProfit||0,td.mens||0),profitYoyMens:td.mensLyProfit?td.mensProfit/td.mensLyProfit*100:null,
       mensYoy:td.mensLy?td.mens/td.mensLy*100:null,mensBudgetRatio:td.mensBudget?td.mens/td.mensBudget*100:null,
+      mensGpBudgetRatio:td.mensGpBudget?(td.mensProfit||0)/td.mensGpBudget*100:null,
       grossRateLadies:grossMarginRate(td.ladiesProfit||0,td.ladies||0),profitYoyLadies:td.ladiesLyProfit?td.ladiesProfit/td.ladiesLyProfit*100:null,
       ladiesYoy:td.ladiesLy?td.ladies/td.ladiesLy*100:null,ladiesBudgetRatio:td.ladiesBudget?td.ladies/td.ladiesBudget*100:null,
+      ladiesGpBudgetRatio:td.ladiesGpBudget?(td.ladiesProfit||0)/td.ladiesGpBudget*100:null,
       mainMens:findMainCategory(z,'0075',direction),mainLadies:findMainCategory(z,'0187',direction)};
   }).sort(function(a,b){return b.budgetRatio-a.budgetRatio;});
 
@@ -1851,11 +1855,11 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
       compareLabel:comparison.label,compareRateLabel:comparison.rateLabel,compareDiffLabel:comparison.diffLabel,
       weather:z.weather,
       todayMens:z.todayMens,prevMens:z.prevMens,budgetMens:z.budgetMens,lyMens:z.lyMens,mensYoy:z.mensYoy,mensBudgetRatio:z.mensBudgetRatio,
-      profitMens:z.profitMens,lyProfitMens:z.lyProfitMens,grossRateMens:z.grossRateMens,profitYoyMens:z.profitYoyMens,
+      profitMens:z.profitMens,lyProfitMens:z.lyProfitMens,grossRateMens:z.grossRateMens,profitYoyMens:z.profitYoyMens,mensGpBudgetRatio:z.mensGpBudgetRatio,
       todayLadies:z.todayLadies,prevLadies:z.prevLadies,budgetLadies:z.budgetLadies,lyLadies:z.lyLadies,ladiesYoy:z.ladiesYoy,ladiesBudgetRatio:z.ladiesBudgetRatio,
-      profitLadies:z.profitLadies,lyProfitLadies:z.lyProfitLadies,grossRateLadies:z.grossRateLadies,profitYoyLadies:z.profitYoyLadies,
+      profitLadies:z.profitLadies,lyProfitLadies:z.lyProfitLadies,grossRateLadies:z.grossRateLadies,profitYoyLadies:z.profitYoyLadies,ladiesGpBudgetRatio:z.ladiesGpBudgetRatio,
       budgetTotal:z.budgetTotal,budgetGapTotal:z.budgetGapTotal,lyTotal:z.lyTotal,yoy:z.yoy,budgetRatio:z.budgetRatio,budgetRankType:z.budgetRankType,judgment:z.judgment,
-      profitTotal:z.profitTotal,lyProfitTotal:z.lyProfitTotal,grossRateTotal:z.grossRateTotal,profitYoy:z.profitYoy,
+      profitTotal:z.profitTotal,lyProfitTotal:z.lyProfitTotal,grossRateTotal:z.grossRateTotal,profitYoy:z.profitYoy,gpBudgetRatioTotal:z.gpBudgetRatioTotal,
       mainMens:z.mainMens,mainLadies:z.mainLadies});
   });
 
@@ -1919,12 +1923,13 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
     var pctStr=(a.pct===null||a.pct===undefined||Number.isNaN(Number(a.pct)))?'-':(a.pct>0?'+':'')+a.pct.toFixed(1)+'%';
     var yoyStr=isZone?fR(a.yoy):'-';
     var budgetStr=isZone?fR(a.budgetRatio):'-';
+    var gpBudgetStr=isZone?fR(a.gpBudgetRatioTotal):'-';
     var budgetGapStr=isZone?fD(a.budgetGapTotal):'';
     var budgetGapCls=isZone&&Number(a.budgetGapTotal)>=0?'num-good':'num-bad';
     var prevAmt=isZone?a.prev:a.prevAmt;
     var todAmt=isZone?a.today:a.todayAmt;
     var title=isZone
-      ?escapeHtml(a.zone)+'：<span class="'+cls+'">予算比 '+budgetStr+'</span> <span class="'+budgetGapCls+'">予算差 '+escapeHtml(budgetGapStr)+'</span> <span class="'+rCls(a.yoy)+'">前年比 '+yoyStr+'</span>'
+      ?escapeHtml(a.zone)+'：<span class="'+cls+'">予算比 '+budgetStr+'</span> <span class="'+rCls(a.gpBudgetRatioTotal)+'">荒利予算比 '+gpBudgetStr+'</span> <span class="'+budgetGapCls+'">予算差 '+escapeHtml(budgetGapStr)+'</span> <span class="'+rCls(a.yoy)+'">前年比 '+yoyStr+'</span>'
       :escapeHtml(a.サブカテ名)+'：<span class="'+cls+'">'+escapeHtml(a.compareRateLabel)+' '+pctStr+'</span> <span class="'+cls+'">金額影響 '+escapeHtml(fD(a.diff))+'</span>';
     var label=isZone
       ?escapeHtml(a.zone)+'　'+escapeHtml(a.budgetRankType||'ゾーン売上')
@@ -1937,6 +1942,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
         '<span class="'+pCls2(a.todayMens,a.prevMens)+'">'+escapeHtml(a.compareLabel)+' '+fR(a.prevMens?(a.todayMens-a.prevMens)/a.prevMens*100:null)+'</span> '+
         '<span class="'+rCls(a.mensYoy)+'">前年 '+fR(a.mensYoy)+'</span> '+
         '<span class="'+rCls(a.mensBudgetRatio)+'">予算 '+fR(a.mensBudgetRatio)+'</span> '+
+        '<span class="'+rCls(a.mensGpBudgetRatio)+'">荒利予算 '+fR(a.mensGpBudgetRatio)+'</span> '+
         '<span class="sales-alert-amount">'+fY(a.prevMens)+' → '+fY(a.todayMens)+'</span>'+
       '</span></div>'+
       '<div class="sales-alert-main">'+fmtMain(a.mainMens)+'</div>'+
@@ -1945,6 +1951,7 @@ function renderSalesAlerts(bumonRows, categoryRows, weatherItems) {
         '<span class="'+pCls2(a.todayLadies,a.prevLadies)+'">'+escapeHtml(a.compareLabel)+' '+fR(a.prevLadies?(a.todayLadies-a.prevLadies)/a.prevLadies*100:null)+'</span> '+
         '<span class="'+rCls(a.ladiesYoy)+'">前年 '+fR(a.ladiesYoy)+'</span> '+
         '<span class="'+rCls(a.ladiesBudgetRatio)+'">予算 '+fR(a.ladiesBudgetRatio)+'</span> '+
+        '<span class="'+rCls(a.ladiesGpBudgetRatio)+'">荒利予算 '+fR(a.ladiesGpBudgetRatio)+'</span> '+
         '<span class="sales-alert-amount">'+fY(a.prevLadies)+' → '+fY(a.todayLadies)+'</span>'+
       '</span></div>'+
       '<div class="sales-alert-main">'+fmtMain(a.mainLadies)+'</div>'+
