@@ -154,9 +154,19 @@ async function loadDashboard() {
   try {
     // cache busting: ブラウザ/CDN のキャッシュで古い JSON を掴まないよう、
     // 毎回 URL を変えて取得する。GitHub Pages 側の更新を即時に反映するため。
-    const res = await fetch('./data/dashboard_data.json?t=' + Date.now(), { cache: 'no-store' });
+    const stamp = Date.now();
+    const requests = await Promise.all([
+      fetch('./data/dashboard_data.json?t=' + stamp, { cache: 'no-store' }),
+      fetch('./data/legwear_category_daily.json?t=' + stamp, { cache: 'no-store' }).catch(function(){ return null; })
+    ]);
+    const res = requests[0];
+    const categoryRes = requests[1];
     if (!res.ok) throw new Error(`データ取得失敗 (${res.status})`);
     const data = inflateDashboardData(await res.json());
+    if (categoryRes && categoryRes.ok) {
+      const categoryRows = await categoryRes.json();
+      if (Array.isArray(categoryRows)) data.legwearCategory = categoryRows;
+    }
     state.data = data;
     renderDashboard(data);
     setLoading(false);
