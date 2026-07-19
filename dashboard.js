@@ -176,10 +176,32 @@ async function loadDashboard() {
   }
 }
 
+// ── データ鮮度バナー ──────────────────────────────────────────
+// 表示中データの最新売上日が「一昨日以前」なら、古い版を掴んでいる可能性が高い
+// （公開は毎日走り、最新は通常＝昨日）。ネットワーク/プロキシのキャッシュ対策の最後の砦。
+function updateFreshnessBanner_(data) {
+  var banner = document.getElementById('staleBanner');
+  if (!banner) return;
+  var dates = (data.legwearBumon || []).map(function (r) { return r.date; }).filter(Boolean).sort();
+  var latest = dates.length ? dates[dates.length - 1] : '';
+  var y = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var yesterday = y.getFullYear() + '-' + pad(y.getMonth() + 1) + '-' + pad(y.getDate());
+  if (latest && latest < yesterday) {
+    banner.textContent = '⚠ 表示中のデータは ' + latest + ' までです（最終更新: ' + (data.updatedAt || '-') +
+      '）。古い版を表示している可能性があります。「再読み込み」→改善しなければブラウザのキャッシュ削除、' +
+      'それでも古ければ社内ネットワーク以外（スマホ回線など）でお試しください。';
+    banner.hidden = false;
+  } else {
+    banner.hidden = true;
+  }
+}
+
 // ── レンダリング本体 ──────────────────────────────────────────
 function renderDashboard(data) {
   hideError();
   document.getElementById('updatedAt').textContent = data.updatedAt || '-';
+  updateFreshnessBanner_(data);
 
   // グローバル週ウィンドウ初期化
   var allDates=[...new Set([
