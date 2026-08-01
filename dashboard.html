@@ -73,6 +73,22 @@
     .overview-temp-key.forecast { width:9px; height:9px; background:#f59e0b; border-radius:999px; }
     .overview-trend-foot { color:#425b76; font-size:13px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .overview-trend-compare { margin-top:3px; color:#62748a; font-size:12px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .progress-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:10px 0 4px; }
+    .progress-card { border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:var(--shadow); padding:14px 16px 12px; }
+    .progress-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px; }
+    .progress-title { color:#31506d; font-size:15px; font-weight:900; }
+    .progress-range { color:#748195; font-size:12px; font-weight:800; }
+    .progress-row { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-top:1px dashed #e3ebf3; flex-wrap:wrap; }
+    .progress-row:first-of-type { border-top:none; }
+    .progress-metric { color:#31506d; font-size:13px; font-weight:900; min-width:32px; }
+    .progress-ratio { color:#102a43; font-size:17px; font-weight:950; font-variant-numeric:tabular-nums; }
+    .progress-diff { font-size:13px; font-weight:850; font-variant-numeric:tabular-nums; }
+    .progress-diff.pos { color:#0a6e3f; }
+    .progress-diff.neg { color:#b42318; }
+    .progress-note { margin:2px 0 0; padding:6px 8px; background:#fff4e6; border-radius:6px; color:#8a4b00; font-size:12px; font-weight:800; line-height:1.45; }
+    .progress-note b { color:#b45309; font-weight:950; }
+    .progress-empty { color:var(--muted); font-size:12px; font-weight:700; }
+    @media (max-width:640px){ .progress-grid{ grid-template-columns:1fr; } }
     .card-title { margin-bottom:8px; font-weight:800; color:#102a43; }
     .meta { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; color:var(--muted); font-size:13px; }
     .importance { color:#92400e; font-weight:800; }
@@ -261,6 +277,12 @@
         <div class="section-heading"><h2>今日の重要アラート</h2><span id="alertCount" class="badge">0件</span></div>
         <div id="overviewModeBar"></div>
         <div id="overviewTrendCards" class="overview-trend-grid" aria-label="重要指標の推移"></div>
+        <div id="budgetProgressSection" hidden>
+          <div class="section-heading" style="margin-top:20px">
+            <h2>予算進捗 <span style="font-size:13px;font-weight:400;color:var(--muted)">全社計・週/月 累計の予算比・差額・必要売上</span></h2>
+          </div>
+          <div id="budgetProgress" class="progress-grid"></div>
+        </div>
         <div id="todayAlerts" class="card-grid"></div>
         <div id="salesAlertSection" hidden>
           <div class="section-heading" style="margin-top:24px">

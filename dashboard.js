@@ -257,6 +257,7 @@ function renderDashboard(data) {
     }
   }
   renderOverviewTrendCards(data);
+  renderBudgetProgress(data);
   renderTodayAlerts(_alerts);
   renderStoreSalesHighlight(data.storeFocusDaily || [], data.storeFocusSubcat || [], data.storeFocusDates || []);
   renderSalesAlerts(data.legwearBumon || [], data.legwearCategory || [], salesAlertWeatherItems);
@@ -878,6 +879,110 @@ function renderOverviewTrendCards(data) {
       (card.compareLabel ? '<div class="overview-trend-compare">' + escapeHtml(card.compareLabel) + '</div>' : '') +
       '</article>';
   }).join('');
+}
+
+// -- 予算進捗パネル（重要タブ）: 週・月の全社計 予算比・差額・不足・必要売上
+// LINE通知 notifyLine_ と同じロジック。差額/不足は legwearBumon(過去日)から計算し、
+// 必要売上(実績荒利率で逆算)は budgetPeriodTotals(未到来日含む期間予算総額)がある時のみ出す。
+function aggregateNationalProgress(rows, fromDate, toDate) {
+  const acc = { salesActual: 0, salesBudget: 0, grossActual: 0, grossBudget: 0, hasData: false };
+  if (!fromDate || !toDate) return acc;
+  (rows || []).forEach((r) => {
+    const d = String(r.date || '');
+    if (!d || d < fromDate || d > toDate) return;
+    if (!isBumonAggregateRow(r)) return;
+    acc.hasData = true;
+    acc.salesActual += Number(r['売上実績'] || 0);
+    acc.salesBudget += Number(r['売上予算'] || 0);
+    const p = grossProfitFromRow(r, '売上実績');
+    if (!Number.isNaN(p)) acc.grossActual += p;
+    acc.grossBudget += Number(r['荒利予算'] || 0);
+  });
+  return acc;
+}
+
+function progressManYen(value) {
+  const a = Math.abs(Math.round(value));
+  return a >= 10000 ? Math.round(a / 10000).toLocaleString('ja-JP') + '万' : a.toLocaleString('ja-JP');
+}
+function progressSignManYen(value) { return (value >= 0 ? '+' : '▲') + progressManYen(value); }
+function progressRatioPct(actual, budget) { return budget ? Math.round(actual / budget * 1000) / 10 : null; }
+function progressMondayString(ymd) {
+  const p = String(ymd).split('-').map(Number);
+  const dt = new Date(p[0], p[1] - 1, p[2]);
+  dt.setDate(dt.getDate() + (dt.getDay() === 0 ? -6 : 1 - dt.getDay()));
+  return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
+}
+
+function buildProgressCard(title, range, agg, totals) {
+  if (!agg.hasData) return '';
+  const salesRatio = progressRatioPct(agg.salesActual, agg.salesBudget);
+  const grossRatio = progressRatioPct(agg.grossActual, agg.grossBudget);
+  const salesDiff = agg.salesActual - agg.salesBudget;
+  const grossDiff = agg.grossActual - agg.grossBudget;
+  const pSales = totals ? Number(totals.salesBudget || 0) : 0;
+  const pGross = totals ? Number(totals.grossBudget || 0) : 0;
+
+  const row = (label, ratio, diff) => {
+    const cls = diff >= 0 ? 'pos' : 'neg';
+    const dtxt = (diff >= 0 ? '差額 ' : '不足 ') + progressSignManYen(diff) + '円';
+    return '<div class="progress-row"><span class="progress-metric">' + label + '</span>' +
+      '<span class="progress-ratio">' + (ratio === null ? '-' : ratio.toFixed(1) + '%') + '</span>' +
+      '<span class="progress-diff ' + cls + '">' + dtxt + '</span></div>';
+  };
+  let html = '<div class="progress-card"><div class="progress-head">' +
+    '<span class="progress-title">' + escapeHtml(title) + '</span>' +
+    '<span class="progress-range">' + escapeHtml(range) + '</span></div>' +
+    row('売上', salesRatio, salesDiff) + row('荒利', grossRatio, grossDiff);
+
+  const notes = [];
+  if (salesDiff < 0 && pSales > agg.salesBudget) {
+    const remNeed = pSales - agg.salesActual;
+    const remBudget = pSales - agg.salesBudget;
+    const pace = Math.round(remNeed / remBudget * 1000) / 10;
+    notes.push('売上: 残りを予算比 <b>' + pace.toFixed(1) + '%</b>（あと' + progressManYen(remNeed) + '円）で予算達成');
+  }
+  if (grossDiff < 0 && pGross > agg.grossActual && pSales > agg.salesBudget && agg.salesActual > 0) {
+    const actualMargin = agg.grossActual / agg.salesActual;
+    const remGrossNeed = pGross - agg.grossActual;
+    const remSalesBudget = pSales - agg.salesBudget;
+    if (actualMargin > 0 && remSalesBudget > 0) {
+      const requiredSales = remGrossNeed / actualMargin;
+      const salesPace = Math.round(requiredSales / remSalesBudget * 1000) / 10;
+      const budgetMargin = pGross / pSales;
+      notes.push('荒利予算達成に必要な売上: 残り予算比 <b>' + salesPace.toFixed(1) + '%</b>' +
+        '（現状荒利率' + (actualMargin * 100).toFixed(1) + '%／予算' + (budgetMargin * 100).toFixed(1) + '%）');
+    }
+  }
+  notes.forEach((n) => { html += '<div class="progress-note">↳ ' + n + '</div>'; });
+  html += '</div>';
+  return html;
+}
+
+function renderBudgetProgress(data) {
+  const section = document.getElementById('budgetProgressSection');
+  const container = document.getElementById('budgetProgress');
+  if (!section || !container) return;
+  const rows = (data && data.legwearBumon) || [];
+  const dates = rows.map((r) => String(r.date || '')).filter(Boolean).sort();
+  const latestDate = dates.length ? dates[dates.length - 1] : '';
+  if (!latestDate) { section.hidden = true; container.innerHTML = ''; return; }
+  const weeks = state.weekWindows || [];
+  const weekStart = weeks.length ? weeks[0].startDate : progressMondayString(latestDate);
+  const monthStart = latestDate.slice(0, 7) + '-01';
+  const monthKey = latestDate.slice(0, 7);
+  const pt = (data && data.budgetPeriodTotals) || {};
+  const monthTotals = (pt.month && String(pt.month.key || monthKey) === monthKey) ? pt.month : null;
+  const weekTotals = (pt.week && (!pt.week.startDate || pt.week.startDate === weekStart)) ? pt.week : null;
+
+  const weekAgg = aggregateNationalProgress(rows, weekStart, latestDate);
+  const monthAgg = aggregateNationalProgress(rows, monthStart, latestDate);
+  const cards =
+    buildProgressCard('週', formatSparklineDate(weekStart) + '〜' + formatSparklineDate(latestDate), weekAgg, weekTotals) +
+    buildProgressCard('月', monthKey, monthAgg, monthTotals);
+  if (!cards) { section.hidden = true; container.innerHTML = ''; return; }
+  container.innerHTML = cards;
+  section.hidden = false;
 }
 
 // -- 重要アラートタブ
