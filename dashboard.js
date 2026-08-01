@@ -914,7 +914,34 @@ function progressMondayString(ymd) {
   return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
 }
 
-function buildProgressCard(title, range, agg, totals) {
+// 品種(サブカテ)の「伸びしろ＝前年比の伸びが大きい順(勢い)」上位n。
+// サブカテは予算が無いため前年基準。全ゾーン合算し、極小品種のノイズを避けるため
+// 期間内サブカテ合計の1%未満は除外してから前年比降順で上位を返す。
+function topMomentumSubcats(catRows, fromDate, toDate, n) {
+  if (!fromDate || !toDate) return [];
+  const m = {};
+  (catRows || []).forEach((r) => {
+    const d = String(r.date || '');
+    if (d < fromDate || d > toDate) return;
+    const name = String(r['サブカテ名'] || '');
+    if (!name) return;
+    const a = m[name] || (m[name] = { sales: 0, ly: 0 });
+    a.sales += Number(r['実績金額'] || 0);
+    a.ly += Number(r['前年同週同曜日実績'] || 0);
+  });
+  let total = 0;
+  Object.keys(m).forEach((k) => { total += m[k].sales; });
+  if (total <= 0) return [];
+  const floor = total * 0.01;
+  return Object.keys(m).map((k) => ({
+    name: k, sales: m[k].sales, ly: m[k].ly,
+    yoy: m[k].ly > 0 ? m[k].sales / m[k].ly * 100 : NaN
+  })).filter((x) => x.ly > 0 && x.sales >= floor && !Number.isNaN(x.yoy))
+    .sort((a, b) => b.yoy - a.yoy)
+    .slice(0, n);
+}
+
+function buildProgressCard(title, range, agg, totals, subcats) {
   if (!agg.hasData) return '';
   const salesRatio = progressRatioPct(agg.salesActual, agg.salesBudget);
   const grossRatio = progressRatioPct(agg.grossActual, agg.grossBudget);
@@ -955,6 +982,17 @@ function buildProgressCard(title, range, agg, totals) {
     }
   }
   notes.forEach((n) => { html += '<div class="progress-note">↳ ' + n + '</div>'; });
+
+  if (subcats && subcats.length) {
+    html += '<div class="progress-subcats"><div class="progress-subcats-title">伸びしろ品種（前年比の伸び 上位）</div>';
+    subcats.forEach((s) => {
+      html += '<div class="progress-sub-row">' +
+        '<span class="progress-sub-name">' + escapeHtml(s.name) + '</span>' +
+        '<span class="progress-sub-yoy">前年比 ' + s.yoy.toFixed(1) + '%</span>' +
+        '<span class="progress-sub-sales">' + progressManYen(s.sales) + '円</span></div>';
+    });
+    html += '</div>';
+  }
   html += '</div>';
   return html;
 }
@@ -977,9 +1015,12 @@ function renderBudgetProgress(data) {
 
   const weekAgg = aggregateNationalProgress(rows, weekStart, latestDate);
   const monthAgg = aggregateNationalProgress(rows, monthStart, latestDate);
+  const catRows = (data && data.legwearCategory) || [];
+  const weekSubs = topMomentumSubcats(catRows, weekStart, latestDate, 4);
+  const monthSubs = topMomentumSubcats(catRows, monthStart, latestDate, 4);
   const cards =
-    buildProgressCard('週', formatSparklineDate(weekStart) + '〜' + formatSparklineDate(latestDate), weekAgg, weekTotals) +
-    buildProgressCard('月', monthKey, monthAgg, monthTotals);
+    buildProgressCard('週', formatSparklineDate(weekStart) + '〜' + formatSparklineDate(latestDate), weekAgg, weekTotals, weekSubs) +
+    buildProgressCard('月', monthKey, monthAgg, monthTotals, monthSubs);
   if (!cards) { section.hidden = true; container.innerHTML = ''; return; }
   container.innerHTML = cards;
   section.hidden = false;
