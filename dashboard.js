@@ -885,7 +885,8 @@ function renderOverviewTrendCards(data) {
 // LINE通知 notifyLine_ と同じロジック。差額/不足は legwearBumon(過去日)から計算し、
 // 必要売上(実績荒利率で逆算)は budgetPeriodTotals(未到来日含む期間予算総額)がある時のみ出す。
 function aggregateNationalProgress(rows, fromDate, toDate) {
-  const acc = { salesActual: 0, salesBudget: 0, grossActual: 0, grossBudget: 0, hasData: false };
+  const acc = { salesActual: 0, salesBudget: 0, salesLastYear: 0,
+    grossActual: 0, grossBudget: 0, grossLastYear: 0, hasData: false };
   if (!fromDate || !toDate) return acc;
   (rows || []).forEach((r) => {
     const d = String(r.date || '');
@@ -894,9 +895,12 @@ function aggregateNationalProgress(rows, fromDate, toDate) {
     acc.hasData = true;
     acc.salesActual += Number(r['売上実績'] || 0);
     acc.salesBudget += Number(r['売上予算'] || 0);
+    acc.salesLastYear += Number(r['前年同週同曜日実績'] || 0);
     const p = grossProfitFromRow(r, '売上実績');
     if (!Number.isNaN(p)) acc.grossActual += p;
     acc.grossBudget += Number(r['荒利予算'] || 0);
+    const lp = lastYearGrossProfitFromRow(r);
+    if (!Number.isNaN(lp)) acc.grossLastYear += lp;
   });
   return acc;
 }
@@ -947,17 +951,21 @@ function buildProgressCard(title, range, agg, totals, subcats) {
   const pSales = totals ? Number(totals.salesBudget || 0) : 0;
   const pGross = totals ? Number(totals.grossBudget || 0) : 0;
 
-  const row = (label, ratio, diff) => {
+  const salesYoy = agg.salesLastYear > 0 ? agg.salesActual / agg.salesLastYear * 100 : null;
+  const grossYoy = agg.grossLastYear > 0 ? agg.grossActual / agg.grossLastYear * 100 : null;
+
+  const row = (label, ratio, yoy, diff) => {
     const cls = diff >= 0 ? 'pos' : 'neg';
     const dtxt = (diff >= 0 ? '差額 ' : '不足 ') + progressSignManYen(diff) + '円';
     return '<div class="progress-row"><span class="progress-metric">' + label + '</span>' +
-      '<span class="progress-ratio">' + (ratio === null ? '-' : ratio.toFixed(1) + '%') + '</span>' +
+      '<span class="progress-ratio">予算比 ' + (ratio === null ? '-' : ratio.toFixed(1) + '%') + '</span>' +
+      '<span class="progress-yoy2">昨対 ' + (yoy === null ? '-' : yoy.toFixed(1) + '%') + '</span>' +
       '<span class="progress-diff ' + cls + '">' + dtxt + '</span></div>';
   };
   let html = '<div class="progress-card"><div class="progress-head">' +
     '<span class="progress-title">' + escapeHtml(title) + '</span>' +
     '<span class="progress-range">' + escapeHtml(range) + '</span></div>' +
-    row('売上', salesRatio, salesDiff) + row('荒利', grossRatio, grossDiff);
+    row('売上', salesRatio, salesYoy, salesDiff) + row('荒利', grossRatio, grossYoy, grossDiff);
 
   const notes = [];
   if (salesDiff < 0 && pSales > agg.salesBudget) {
