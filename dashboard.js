@@ -918,26 +918,29 @@ function progressMondayString(ymd) {
   return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
 }
 
-// 品種(サブカテ)の「伸びしろ＝前年から金額が大きく伸びている順」上位n。
-// サブカテは予算が無いため前年基準。全ゾーン合算し、前年差(実績−前年)がプラスの品種を
-// 前年差の大きい順に並べる(規模の大きい伸びも拾える)。各品種に昨対比と前年差を持たせる。
+// 「伸びしろ＝前年から金額が大きく伸びているカテゴリー×品種」上位n。
+// 予算が無いため前年基準。同じ品種名が複数カテゴリ(メンズ/レディースソックス等)に跨るため、
+// カテゴリ名×サブカテ名の組で集計する。全ゾーン合算し、前年差(実績−前年)がプラスの組を
+// 前年差の大きい順に並べる(規模の大きい伸びも拾える)。各組に昨対比と前年差を持たせる。
 function topGrowingSubcats(catRows, fromDate, toDate, n) {
   if (!fromDate || !toDate) return [];
   const m = {};
   (catRows || []).forEach((r) => {
     const d = String(r.date || '');
     if (d < fromDate || d > toDate) return;
-    const name = String(r['サブカテ名'] || '');
-    if (!name) return;
-    const a = m[name] || (m[name] = { sales: 0, ly: 0 });
+    const sub = String(r['サブカテ名'] || '');
+    if (!sub) return;
+    const cat = String(r['カテゴリ名'] || '');
+    const key = cat + '' + sub;
+    const a = m[key] || (m[key] = { cat: cat, sub: sub, sales: 0, ly: 0 });
     a.sales += Number(r['実績金額'] || 0);
     a.ly += Number(r['前年同週同曜日実績'] || 0);
   });
-  return Object.keys(m).map((k) => ({
-    name: k, sales: m[k].sales, ly: m[k].ly,
-    diff: m[k].sales - m[k].ly,
-    yoy: m[k].ly > 0 ? m[k].sales / m[k].ly * 100 : NaN
-  })).filter((x) => x.diff > 0)
+  return Object.keys(m).map((k) => {
+    const o = m[k];
+    return { cat: o.cat, sub: o.sub, sales: o.sales, ly: o.ly,
+      diff: o.sales - o.ly, yoy: o.ly > 0 ? o.sales / o.ly * 100 : NaN };
+  }).filter((x) => x.diff > 0)
     .sort((a, b) => b.diff - a.diff)
     .slice(0, n);
 }
@@ -989,10 +992,10 @@ function buildProgressCard(title, range, agg, totals, subcats) {
   notes.forEach((n) => { html += '<div class="progress-note">↳ ' + n + '</div>'; });
 
   if (subcats && subcats.length) {
-    html += '<div class="progress-subcats"><div class="progress-subcats-title">伸びしろ品種（金額の伸び 上位）</div>';
+    html += '<div class="progress-subcats"><div class="progress-subcats-title">伸びしろ カテゴリ×品種（金額の伸び 上位）</div>';
     subcats.forEach((s) => {
       html += '<div class="progress-sub-row">' +
-        '<span class="progress-sub-name">' + escapeHtml(s.name) + '</span>' +
+        '<span class="progress-sub-name"><span class="progress-sub-cat">' + escapeHtml(s.cat) + '</span> ' + escapeHtml(s.sub) + '</span>' +
         '<span class="progress-sub-yoy">昨対 ' + (Number.isNaN(s.yoy) ? '-' : s.yoy.toFixed(1) + '%') + '</span>' +
         '<span class="progress-sub-sales">差 +' + progressManYen(s.diff) + '円</span></div>';
     });
