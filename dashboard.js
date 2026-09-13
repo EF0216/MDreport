@@ -603,7 +603,7 @@ function temperatureRangeLabel(temp) {
 
 function temperatureForecastChipLabel(temp) {
   const count = Number(temp && temp.forecastCount || 0);
-  return count > 0 ? formatNum(count) + '日先まで' : '実績のみ';
+  return count > 0 ? formatNum(count) + '日先まで' : '予報なし';
 }
 
 function lastYearTemperatureValue(value, row) {
@@ -629,10 +629,12 @@ function temperatureStatsForDate(date, rows) {
     if (!Number.isNaN(maxTemp) && (Number.isNaN(high) || maxTemp > high)) {
       high = maxTemp;
       highZone = row.zone || row.area_name || '';
+      highArea = row.area_name || highZone;
     }
     if (!Number.isNaN(minTemp) && (Number.isNaN(low) || minTemp < low)) {
       low = minTemp;
       lowZone = row.zone || row.area_name || '';
+      lowArea = row.area_name || lowZone;
     }
     if (!Number.isNaN(lyMaxTemp) && (Number.isNaN(lastYearHigh) || lyMaxTemp > lastYearHigh)) {
       lastYearHigh = lyMaxTemp;
@@ -641,7 +643,7 @@ function temperatureStatsForDate(date, rows) {
       lastYearLow = lyMinTemp;
     }
   });
-  return { date, high, low, lastYearHigh, lastYearLow, highZone, lowZone, isForecast };
+  return { date, high, low, lastYearHigh, lastYearLow, highZone, lowZone, highArea, lowArea, isForecast };
 }
 
 function overviewTemperatureContext(data) {
@@ -663,25 +665,44 @@ function overviewTemperatureContext(data) {
   } else {
     series = allSeries.slice(-22);
   }
-  const range = series.reduce((memo, item) => {
+  const baseDate = data.today || String(data.updatedAt || '').slice(0, 10) ||
+    ((data.weatherLatest || []).map((row) => row.date).filter(Boolean).sort().pop()) ||
+    source.filter((row) => row.source !== 'forecast').map((row) => row.date).sort().pop();
+  const forecastEnd = baseDate ? shiftDateString(baseDate, 7) : '';
+  const forecastRows = source.filter((row) => row.source === 'forecast' && baseDate && row.date > baseDate && row.date <= forecastEnd);
+  const forecastByDate = {};
+  forecastRows.forEach((row) => {
+    if (!forecastByDate[row.date]) forecastByDate[row.date] = [];
+    forecastByDate[row.date].push(row);
+  });
+  const forecastSeries = Object.keys(forecastByDate).sort().map((date) => temperatureStatsForDate(date, forecastByDate[date]));
+  const range = forecastSeries.reduce((memo, item) => {
     if (!Number.isNaN(item.high) && (Number.isNaN(memo.high) || item.high > memo.high)) {
       memo.high = item.high;
       memo.highZone = item.highZone;
+      memo.highDate = item.date;
+      memo.highArea = item.highArea;
     }
     if (!Number.isNaN(item.low) && (Number.isNaN(memo.low) || item.low < memo.low)) {
       memo.low = item.low;
       memo.lowZone = item.lowZone;
+      memo.lowDate = item.date;
+      memo.lowArea = item.lowArea;
     }
     return memo;
   }, { high: NaN, low: NaN, highZone: '', lowZone: '' });
   return {
     high: range.high,
     low: range.low,
+    highDate: range.highDate,
+    lowDate: range.lowDate,
+    highArea: range.highArea,
+    lowArea: range.lowArea,
     highZone: range.highZone,
     lowZone: range.lowZone,
     series,
     dayCount: series.length,
-    forecastCount: series.filter((item) => item.isForecast).length
+    forecastCount: forecastSeries.length
   };
 }
 
@@ -858,7 +879,7 @@ function buildOverviewTrendCards(data) {
     { label: '予算比', value: formatPct(current.budgetRatio).replace('%', ''), unit: '%', chip: budgetDelta, foot: '全社計 合計', compareLabel, tone: 'good', series: series.map((item) => item.budgetRatio), scale: { type: 'pct' }, dates: salesDates },
     { label: '前年同週同曜日比', value: formatPct(current.yearRatio).replace('%', ''), unit: '%', chip: yearDelta, foot: '対比元: 前年同週同曜日実績', compareLabel: yearCompareLabel, tone: 'good', series: series.map((item) => item.yearRatio), scale: { type: 'pct' }, dates: salesDates },
     { label: '粗利率', value: formatPct(current.grossRate).replace('%', ''), unit: '%', chip: grossDelta, foot: '荒利前年比 ' + formatPct(current.profitYearRatio), compareLabel, tone: 'profit', series: series.map((item) => item.grossRate), scale: { type: 'pct' }, dates: salesDates },
-    { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, temperatureForecastChipLabel(temperature)), foot: '最高 ' + (temperature.highZone || '-') + ' / 最低 ' + (temperature.lowZone || '-'), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
+    { label: '全国気温予報', value: temperatureRangeLabel(temperature), unit: '℃', chip: trendChip(null, temperatureForecastChipLabel(temperature)), foot: '予報のみ集計｜最高 ' + (temperature.highArea || '-') + ' ' + formatSparklineDate(temperature.highDate) + ' / 最低 ' + (temperature.lowArea || '-') + ' ' + formatSparklineDate(temperature.lowDate), tone: 'alert', series: temperature.series || [], dates: temperatureDates, className: 'temperature-card', chartHtml: temperatureSparklineSvg(temperature.series || []), legendHtml: temperatureTrendLegend() }
   ];
 }
 
